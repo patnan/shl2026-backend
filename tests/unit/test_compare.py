@@ -288,3 +288,170 @@ def test_compare_game_score_change_raises_when_score_is_missing():
 
   with pytest.raises(CompareGameScoreChangeError, match="Score must contain"):
     compare_game_score_change(previous, current)
+
+
+def test_compare_game_score_change_regulation_goal_with_scorer():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "0-0"},
+    "actions": [],
+  }
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "1-0"},
+    "actions": [
+      {
+        "period": "1st period",
+        "game_time": "08:42",
+        "event_type": "goal",
+        "player_text": "19. Kinnvall, Oskar",
+        "players": ["19. Kinnvall, Oskar"],
+        "goal": {"home_score": 1, "away_score": 0, "strength": "EQ", "qualifier": None},
+      },
+    ],
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result["scored"] is True
+  assert result["teams_scored"] == [
+    {
+      "team": "Brynäs IF",
+      "goals_added": 1,
+      "scorer": "19. Kinnvall, Oskar",
+      "scorer_players": ["19. Kinnvall, Oskar"],
+      "game_time": "08:42",
+    }
+  ]
+
+
+def test_compare_game_score_change_overtime_goal_with_scorer():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "2-2"},
+    "actions": [],
+  }
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "3-2"},
+    "actions": [
+      {
+        "period": "period 4",
+        "game_time": "63:15",
+        "event_type": "goal",
+        "player_text": "19. Kinnvall, Oskar",
+        "players": ["19. Kinnvall, Oskar"],
+        "goal": {"home_score": 3, "away_score": 2, "strength": "OT", "qualifier": None},
+      },
+    ],
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result["scored"] is True
+  assert result["teams_scored"] == [
+    {
+      "team": "Brynäs IF",
+      "goals_added": 1,
+      "scorer": "19. Kinnvall, Oskar",
+      "scorer_players": ["19. Kinnvall, Oskar"],
+      "game_time": "63:15",
+    }
+  ]
+
+
+def test_compare_game_score_change_penalty_shot_goal():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "1-1"},
+    "actions": [],
+  }
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "2-1"},
+    "actions": [
+      {
+        "period": "2nd period",
+        "game_time": "32:10",
+        "event_type": "PS",
+        "player_text": "19. Kinnvall, Oskar",
+        "players": ["19. Kinnvall, Oskar"],
+        "is_goal": True,
+      },
+    ],
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result["scored"] is True
+  assert result["teams_scored"][0]["team"] == "Brynäs IF"
+  assert result["teams_scored"][0]["game_time"] == "32:10"
+
+
+def test_compare_game_score_change_missed_penalty_shot_no_goal():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "1-1"},
+    "actions": [],
+  }
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "1-1"},
+    "actions": [
+      {
+        "period": "2nd period",
+        "game_time": "32:10",
+        "event_type": "PS",
+        "player_text": "19. Kinnvall, Oskar Missed Penalty Shot Saved By 1. Enroth, Jhonas",
+        "players": ["19. Kinnvall, Oskar Missed Penalty Shot Saved By", "1. Enroth, Jhonas"],
+        "is_goal": False,
+      },
+    ],
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result["scored"] is False
+  assert result["teams_scored"] == []
+
+
+def test_compare_game_score_change_multiple_goals_in_diff():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "1-1"},
+    "actions": [],
+  }
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "3-2"},
+    "actions": [
+      {
+        "period": "2nd period",
+        "game_time": "25:00",
+        "event_type": "goal",
+        "player_text": "19. Kinnvall, Oskar",
+        "players": ["19. Kinnvall, Oskar"],
+        "goal": {"home_score": 2, "away_score": 1, "strength": "EQ", "qualifier": None},
+      },
+      {
+        "period": "2nd period",
+        "game_time": "27:30",
+        "event_type": "goal",
+        "player_text": "21. Away, Player",
+        "players": ["21. Away, Player"],
+        "goal": {"home_score": 2, "away_score": 2, "strength": "EQ", "qualifier": None},
+      },
+      {
+        "period": "2nd period",
+        "game_time": "29:15",
+        "event_type": "goal",
+        "player_text": "28. Kloos, Justin",
+        "players": ["28. Kloos, Justin"],
+        "goal": {"home_score": 3, "away_score": 2, "strength": "PP1", "qualifier": None},
+      },
+    ],
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result["scored"] is True
+  assert len(result["teams_scored"]) == 2
+  home = next(t for t in result["teams_scored"] if t["team"] == "Brynäs IF")
+  away = next(t for t in result["teams_scored"] if t["team"] == "Luleå HF")
+  assert home["goals_added"] == 2
+  assert away["goals_added"] == 1
