@@ -2,7 +2,7 @@
 
 This project scrapes SweHockey game pages, normalizes game data, computes standings, validates standings against SweHockey overview tables, and compares score changes between game snapshots.
 
-The implementation now lives under `src/`.
+The implementation lives under `src/`.
 
 ## What has been implemented
 
@@ -23,7 +23,7 @@ The implementation now lives under `src/`.
 
 ## Cache behavior
 
-Generated files are now routed to a cache directory by default.
+Generated files are routed to a cache directory by default.
 
 - Default cache folder: cache/
 - Relative output paths are stored under cache/
@@ -37,8 +37,7 @@ The cache folder is ignored by git.
 ## Main modules and scripts
 
 - src/shl/api.py
-  - Primary functions: `main()`, `extract_game()`, `extract_game_by_id()`, `extract_games_from_listing()`, `extract_games_from_listing_with_progress()`, `extract_games_from_listing_by_date()`, `parse_top_stats()`, `parse_actions()`, `calculate_standings()`, `validate_season_standings()`, `validate_multiple_seasons()`, `compare_game_score_change()`, and `compare_game_score_change_from_files()`.
-  - This is the public entrypoint for the toolkit and also exposes the CLI used for single-game extraction.
+  - Public re-export surface for the toolkit. Imports and exposes everything from `parsing`, `extraction`, `validation`, and `compare`.
 
 - src/shl/parsing.py
   - Primary functions: `parse_top_stats()`, `parse_actions()`, `parse_score_block()`, `parse_players()`, `extract_penalty_metadata()`, `find_top_stats_table()`, `find_actions_table()`, and `clean_text()`.
@@ -46,7 +45,7 @@ The cache folder is ignored by git.
 
 - src/shl/extraction.py
   - Primary functions: `fetch_html()`, `extract_game_urls_from_listing_html()`, `extract_game_urls_from_listing_html_by_date()`, `extract_game()`, `extract_game_by_id()`, `extract_games_from_listing()`, `extract_games_from_listing_with_progress()`, and `extract_games_from_listing_by_date()`.
-  - This layer is responsible for fetching and orchestrating the scrape pipeline.
+  - Responsible for fetching and orchestrating the scrape pipeline.
 
 - src/shl/validation.py
   - Primary functions: `calculate_standings()`, `parse_overview_standings_html()`, `compare_standings()`, `build_validation_report()`, `load_or_fetch_season_validation_inputs()`, `validate_season_standings()`, and `validate_multiple_seasons()`.
@@ -56,66 +55,60 @@ The cache folder is ignored by git.
   - Primary functions: `compare_game_score_change()` and `compare_game_score_change_from_files()`.
   - Used to compare snapshots and report which team scored, along with scorer and time details.
 
-- src/standings_cli.py
-  - Primary functions: `main()`, `format_standings_row()`, `print_standings_table()`, `write_standings_csv()`, and `resolve_output_path()`.
-  - Scrapes a listing page, computes standings, and optionally writes JSON/CSV output.
-
-- src/validation_cli.py
-  - Primary functions: `main()`, `resolve_output_path()`, and `resolve_input_path()`.
-  - Fetches overview pages or validates calculated standings for one or many seasons.
-
-- src/scrape_all_games_cli.py
-  - Primary functions: `main()` and `resolve_output_path()`.
-  - Scrapes all linked games from a listing page and saves aggregated JSON.
-
-- src/scrape_games_by_date_cli.py
-  - Primary functions: `main()` and `resolve_output_path()`.
-  - Scrapes only games from a specific YYYY-MM-DD date and saves JSON.
-
-- src/compare_scores_cli.py
-  - Primary functions: `main()` and `resolve_output_path()`.
-  - Compares two saved game JSON files for score-change events.
+- src/cli.py
+  - Unified CLI with three subcommands: `scrape`, `validate`, and `compare`.
+  - Primary functions: `main()`, `cmd_scrape()`, `cmd_validate()`, `cmd_compare()`, `format_standings_row()`, `print_standings_table()`, `write_standings_csv()`, `resolve_output_path()`, and `resolve_input_path()`.
 
 ## Quick usage
 
 Single game by id:
 
-  /bin/python -m src.shl.api --game-id 1004357
+  python -m src.cli scrape --game-id 1004357
 
-Standings from a listing:
+Scrape all games and compute standings:
 
-  /bin/python -m src.standings_cli <listing_url>
-
-Validate one season:
-
-  /bin/python -m src.validation_cli 18263 --validate --output validation_report_18263.json
-
-Validate multiple seasons:
-
-  /bin/python -m src.validation_cli --validate --season-ids 18263 17556 15977 --output batch_validation.json
+  python -m src.cli scrape <listing_url>
 
 Scrape games by date:
 
-  /bin/python -m src.scrape_games_by_date_cli <schedule_url> 2025-09-16
+  python -m src.cli scrape <schedule_url> --date 2025-09-16
+
+Validate one season:
+
+  python -m src.cli validate 18263 --validate --output validation_report_18263.json
+
+Validate multiple seasons:
+
+  python -m src.cli validate --validate --season-ids 18263 17556 15977 --output batch_validation.json
 
 Compare two snapshots:
 
-  /bin/python -m src.compare_scores_cli cache/aggregated_1004357-a.json cache/aggregated_1004357-b.json
+  python -m src.cli compare cache/aggregated_1004357-a.json cache/aggregated_1004357-b.json
 
 ## Testing
 
-Run the full suite:
+Unit tests run without network access. Integration tests make real network calls and are skipped by default.
 
-  /bin/python -m pytest -q tests
+Run unit tests:
 
-The test coverage is now split across focused modules:
+  python -m pytest tests/unit/
 
-- tests/test_parsing.py
-- tests/test_extraction.py
-- tests/test_compare.py
-- tests/test_validation.py
+Run integration tests:
 
-Current status during latest updates: all tests passing.
+  python -m pytest tests/integration/
+
+Run everything:
+
+  python -m pytest tests/ --integration
+
+Test files:
+
+- tests/unit/test_parsing.py
+- tests/unit/test_extraction.py
+- tests/unit/test_compare.py
+- tests/unit/test_validation.py
+- tests/unit/test_cli.py
+- tests/integration/test_integration.py
 
 ## Notes
 

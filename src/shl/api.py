@@ -1,4 +1,3 @@
-from src.shl.game_cli import MainExecutionError, main
 from src.shl.compare import (
     CompareGameScoreChangeError,
     LoadGameObjectFromFileError,
@@ -74,8 +73,6 @@ from src.shl.validation import (
 )
 
 __all__ = [
-    "MainExecutionError",
-    "main",
     "CompareGameScoreChangeError",
     "LoadGameObjectFromFileError",
     "compare_game_score_change",
