@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 
-from extract_top_stats import compare_game_score_change_from_files
+from src.shl.api import compare_game_score_change_from_files
 
 
 def resolve_output_path(cache_dir: Path, path_value: str) -> Path:

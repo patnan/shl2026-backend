@@ -4,7 +4,7 @@ import csv
 import json
 from pathlib import Path
 
-from extract_top_stats import calculate_standings, extract_games_from_listing_with_progress
+from src.shl.api import calculate_standings, extract_games_from_listing_with_progress
 
 
 CSV_COLUMNS = [

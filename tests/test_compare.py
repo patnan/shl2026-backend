@@ -1,0 +1,290 @@
+import json
+
+import pytest
+
+from src.shl.api import (
+    CompareGameScoreChangeError,
+    compare_game_score_change,
+    compare_game_score_change_from_files,
+)
+
+def test_compare_game_score_change_detects_scoring_team_from_current_scores():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "1-1"},
+  }
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "2-1"},
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result == {
+    "scored": True,
+    "teams_scored": [
+      {
+        "team": "Brynäs IF",
+        "goals_added": 1,
+        "scorer": None,
+        "scorer_players": None,
+        "game_time": None,
+      }
+    ],
+    "score": "2-1",
+    "previous_score": "1-1",
+  }
+
+
+def test_compare_game_score_change_supports_final_score_shape():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Örebro HK"},
+    "score": {"final": "3-3"},
+  }
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Örebro HK"},
+    "score": {"final": "4-3"},
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result["scored"] is True
+  assert result["teams_scored"] == [
+    {
+      "team": "Brynäs IF",
+      "goals_added": 1,
+      "scorer": None,
+      "scorer_players": None,
+      "game_time": None,
+    }
+  ]
+  assert result["score"] == "4-3"
+
+
+def test_compare_game_score_change_reports_no_score_change():
+  previous = {
+    "game": {"home_team": "A", "away_team": "B"},
+    "score": {"home_score": 2, "away_score": 1},
+  }
+  current = {
+    "game": {"home_team": "A", "away_team": "B"},
+    "score": {"home_score": 2, "away_score": 1},
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result == {
+    "scored": False,
+    "teams_scored": [],
+    "score": "2-1",
+    "previous_score": "2-1",
+  }
+
+
+def test_compare_game_score_change_from_files_loads_two_dicts_and_compares(tmp_path):
+  previous_file = tmp_path / "prev.json"
+  current_file = tmp_path / "curr.json"
+
+  previous_file.write_text(
+    json.dumps({"game": {"home_team": "A", "away_team": "B"}, "score": {"current": "0-0"}}),
+    encoding="utf-8",
+  )
+  current_file.write_text(
+    json.dumps({"game": {"home_team": "A", "away_team": "B"}, "score": {"current": "0-1"}}),
+    encoding="utf-8",
+  )
+
+  result = compare_game_score_change_from_files(str(previous_file), str(current_file))
+  assert result["scored"] is True
+  assert result["teams_scored"] == [
+    {
+      "team": "B",
+      "goals_added": 1,
+      "scorer": None,
+      "scorer_players": None,
+      "game_time": None,
+    }
+  ]
+  assert result["score"] == "0-1"
+
+
+def test_compare_game_score_change_returns_scorer_and_time_from_actions():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "1-1"},
+    "actions": [
+      {
+        "game_time": "10:00",
+        "event_type": "goal",
+        "player_text": "11. Home, Player",
+        "players": ["11. Home, Player"],
+        "goal": {"home_score": 1, "away_score": 0},
+      },
+      {
+        "game_time": "12:00",
+        "event_type": "goal",
+        "player_text": "21. Away, Player",
+        "players": ["21. Away, Player"],
+        "goal": {"home_score": 1, "away_score": 1},
+      },
+    ],
+  }
+
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF"},
+    "score": {"current": "2-1"},
+    "actions": [
+      {
+        "game_time": "10:00",
+        "event_type": "goal",
+        "player_text": "11. Home, Player",
+        "players": ["11. Home, Player"],
+        "goal": {"home_score": 1, "away_score": 0},
+      },
+      {
+        "game_time": "12:00",
+        "event_type": "goal",
+        "player_text": "21. Away, Player",
+        "players": ["21. Away, Player"],
+        "goal": {"home_score": 1, "away_score": 1},
+      },
+      {
+        "game_time": "15:34",
+        "event_type": "goal",
+        "player_text": "19. Kinnvall, Oskar",
+        "players": ["19. Kinnvall, Oskar"],
+        "goal": {"home_score": 2, "away_score": 1},
+      },
+    ],
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result["teams_scored"] == [
+    {
+      "team": "Brynäs IF",
+      "goals_added": 1,
+      "scorer": "19. Kinnvall, Oskar",
+      "scorer_players": ["19. Kinnvall, Oskar"],
+      "game_time": "15:34",
+    }
+  ]
+
+
+def test_compare_game_score_change_returns_scorer_and_time_from_new_non_goal_action():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Örebro HK"},
+    "score": {"final": "3-3"},
+    "actions": [
+      {
+        "period": "period 4",
+        "game_time": "63:01",
+        "event_type": "",
+        "team_abbrev": "ÖHK",
+        "player_text": "Team penalty PenaltyShot",
+        "players": ["Team penalty PenaltyShot"],
+      }
+    ],
+  }
+
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Örebro HK"},
+    "score": {"final": "4-3"},
+    "actions": [
+      {
+        "period": "period 4",
+        "game_time": "63:01",
+        "event_type": "PS",
+        "team_abbrev": "BIF",
+        "player_text": "33. Silfverberg, Jakob Missed Penalty Shot Saved By 1. Enroth, Jhonas",
+        "players": [
+          "33. Silfverberg, Jakob Missed Penalty Shot Saved By",
+          "1. Enroth, Jhonas",
+        ],
+      },
+      {
+        "period": "period 4",
+        "game_time": "63:01",
+        "event_type": "",
+        "team_abbrev": "ÖHK",
+        "player_text": "Team penalty PenaltyShot",
+        "players": ["Team penalty PenaltyShot"],
+      },
+    ],
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result["teams_scored"] == [
+    {
+      "team": "Brynäs IF",
+      "goals_added": 1,
+      "scorer": "33. Silfverberg, Jakob Missed Penalty Shot Saved By 1. Enroth, Jhonas",
+      "scorer_players": [
+        "33. Silfverberg, Jakob Missed Penalty Shot Saved By",
+        "1. Enroth, Jhonas",
+      ],
+      "game_time": "63:01",
+    }
+  ]
+
+
+def test_compare_game_score_change_detects_new_scored_game_winning_shot_without_main_score_change():
+  previous = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Örebro HK"},
+    "score": {"current": "3-3"},
+    "actions": [
+      {
+        "period": "period 5",
+        "game_time": "65:00",
+        "event_type": "GWS",
+        "team_abbrev": "ÖHK",
+        "player_text": "21. Puistola, Patrik vs. goalie 45. Clara, Damian",
+        "players": ["21. Puistola, Patrik", "45. Clara, Damian"],
+        "is_goal": False,
+        "shot_outcome": "missed",
+      }
+    ],
+  }
+
+  current = {
+    "game": {"home_team": "Brynäs IF", "away_team": "Örebro HK"},
+    "score": {"current": "3-3"},
+    "actions": [
+      {
+        "period": "period 5",
+        "game_time": "65:00",
+        "event_type": "GWS",
+        "team_abbrev": "BIF",
+        "player_text": "52. Kopacka, Jack vs. goalie 1. Enroth, Jhonas",
+        "players": ["52. Kopacka, Jack", "1. Enroth, Jhonas"],
+        "is_goal": True,
+        "shot_outcome": "scored",
+      },
+      {
+        "period": "period 5",
+        "game_time": "65:00",
+        "event_type": "GWS",
+        "team_abbrev": "ÖHK",
+        "player_text": "21. Puistola, Patrik vs. goalie 45. Clara, Damian",
+        "players": ["21. Puistola, Patrik", "45. Clara, Damian"],
+        "is_goal": False,
+        "shot_outcome": "missed",
+      },
+    ],
+  }
+
+  result = compare_game_score_change(previous, current)
+  assert result["scored"] is True
+  assert result["teams_scored"] == [
+    {
+      "team": "Brynäs IF",
+      "goals_added": 1,
+      "scorer": "52. Kopacka, Jack vs. goalie 1. Enroth, Jhonas",
+      "scorer_players": ["52. Kopacka, Jack", "1. Enroth, Jhonas"],
+      "game_time": "65:00",
+    }
+  ]
+
+
+def test_compare_game_score_change_raises_when_score_is_missing():
+  previous = {"game": {"home_team": "A", "away_team": "B"}, "score": {}}
+  current = {"game": {"home_team": "A", "away_team": "B"}, "score": {"current": "1-0"}}
+
+  with pytest.raises(CompareGameScoreChangeError, match="Score must contain"):
+    compare_game_score_change(previous, current)

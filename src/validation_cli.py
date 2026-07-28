@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 
-from extract_top_stats import (
+from src.shl.api import (
     build_validation_report,
     fetch_html,
     load_or_fetch_season_validation_inputs,

@@ -3,7 +3,7 @@ import argparse
 import json
 from pathlib import Path
 
-from extract_top_stats import extract_games_from_listing_by_date
+from src.shl.extract_top_stats import extract_games_from_listing_by_date
 
 
 def resolve_output_path(cache_dir: Path, path_value: str) -> Path:
