@@ -1,0 +1,27 @@
+{
+  "season_ids": [
+    18263
+  ],
+  "total_seasons": 1,
+  "successful_seasons": 1,
+  "failed_seasons": 0,
+  "matching_seasons": 1,
+  "mismatching_seasons": 0,
+  "all_match": true,
+  "results": [
+    {
+      "season_id": 18263,
+      "schedule_url": "https://stats.swehockey.se/ScheduleAndResults/Schedule/18263",
+      "overview_url": "https://stats.swehockey.se/ScheduleAndResults/Overview/18263",
+      "matches": true,
+      "mismatch_count": 0,
+      "team_count": 14,
+      "mismatches": [],
+      "error": null,
+      "games_source": "cache",
+      "overview_source": "cache",
+      "games_cache_path": "batch_cache_check/games_18263.json",
+      "overview_cache_path": "batch_cache_check/overview_18263.html"
+    }
+  ]
+}
