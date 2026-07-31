@@ -29,8 +29,8 @@ def test_extract_games_from_listing_scrapes_each_game(monkeypatch):
   def fake_extract_game(url):
     return {"url": url}
 
-  monkeypatch.setattr("src.shl.api.fetch_html", fake_fetch_html)
-  monkeypatch.setattr("src.shl.api.extract_game", fake_extract_game)
+  monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", fake_fetch_html)
+  monkeypatch.setattr("src.shl.helpers.extraction.extract_game", fake_extract_game)
 
   results = extract_games_from_listing("https://stats.swehockey.se/Tournaments/SHL")
   assert results == [
@@ -58,8 +58,8 @@ def test_extract_games_from_listing_raises_descriptive_error_on_game_failure(mon
       raise ValueError("missing top stats")
     return {"url": url}
 
-  monkeypatch.setattr("src.shl.api.fetch_html", fake_fetch_html)
-  monkeypatch.setattr("src.shl.api.extract_game", fake_extract_game)
+  monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", fake_fetch_html)
+  monkeypatch.setattr("src.shl.helpers.extraction.extract_game", fake_extract_game)
 
   with pytest.raises(GameScrapeError, match="Failed to scrape game") as exc:
     extract_games_from_listing(listing_url)
@@ -77,7 +77,7 @@ def test_extract_games_from_listing_raises_when_no_event_links(monkeypatch):
     assert url == listing_url
     return "<html><body><a href='/Game/LineUps/1004840'>lineup</a></body></html>"
 
-  monkeypatch.setattr("src.shl.api.fetch_html", fake_fetch_html)
+  monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", fake_fetch_html)
 
   with pytest.raises(GameScrapeError, match="No game event links were found"):
     extract_games_from_listing(listing_url)
@@ -104,8 +104,8 @@ def test_extract_games_from_listing_progress_callback(monkeypatch):
   def progress_callback(index, total, url):
     progress_events.append((index, total, url))
 
-  monkeypatch.setattr("src.shl.api.fetch_html", fake_fetch_html)
-  monkeypatch.setattr("src.shl.api.extract_game", fake_extract_game)
+  monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", fake_fetch_html)
+  monkeypatch.setattr("src.shl.helpers.extraction.extract_game", fake_extract_game)
 
   results = extract_games_from_listing_with_progress(listing_url, progress_callback=progress_callback)
 
@@ -138,9 +138,9 @@ def test_extract_game_entrypoint_orchestrates_pipeline(monkeypatch):
     assert score_period_count == 3
     return [{"game_time": "00:00"}]
 
-  monkeypatch.setattr("src.shl.api.fetch_html", fake_fetch_html)
-  monkeypatch.setattr("src.shl.api.parse_top_stats", fake_parse_top_stats)
-  monkeypatch.setattr("src.shl.api.parse_actions", fake_parse_actions)
+  monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", fake_fetch_html)
+  monkeypatch.setattr("src.shl.helpers.extraction.parse_top_stats", fake_parse_top_stats)
+  monkeypatch.setattr("src.shl.helpers.extraction.parse_actions", fake_parse_actions)
 
   result = extract_game("https://example.test/game/1")
   assert called == {"fetch": True, "top": True, "actions": True}
@@ -154,7 +154,7 @@ def test_extract_game_by_id_builds_url_and_delegates(monkeypatch):
     captured["url"] = url
     return {"game": {"home_team": "A", "away_team": "B"}, "score": {"current": "0-0"}, "actions": []}
 
-  monkeypatch.setattr("src.shl.api.extract_game", fake_extract_game)
+  monkeypatch.setattr("src.shl.helpers.extraction.extract_game", fake_extract_game)
 
   result = extract_game_by_id(1004357)
   assert captured["url"] == "https://stats.swehockey.se/Game/Events/1004357"
@@ -279,8 +279,8 @@ def test_extract_games_from_listing_by_date_scrapes_only_matching_games(monkeypa
   def fake_extract_game(url):
     return {"game": {"url": url}}
 
-  monkeypatch.setattr("src.shl.api.fetch_html", fake_fetch_html)
-  monkeypatch.setattr("src.shl.api.extract_game", fake_extract_game)
+  monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", fake_fetch_html)
+  monkeypatch.setattr("src.shl.helpers.extraction.extract_game", fake_extract_game)
 
   results = extract_games_from_listing_by_date(
     "https://stats.swehockey.se/ScheduleAndResults/Schedule/18263",
@@ -298,7 +298,7 @@ def test_extract_games_from_listing_by_date_returns_empty_for_missing_date(monke
     assert url == "https://stats.swehockey.se/ScheduleAndResults/Schedule/18263"
     return "<html><body><table><tr><td>2025-09-18</td><td><a href='/Game/Events/1004310'>game</a></td></tr></table></body></html>"
 
-  monkeypatch.setattr("src.shl.api.fetch_html", fake_fetch_html)
+  monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", fake_fetch_html)
 
   results = extract_games_from_listing_by_date(
     "https://stats.swehockey.se/ScheduleAndResults/Schedule/18263",
@@ -323,8 +323,8 @@ def test_extract_games_from_listing_by_date_raises_on_game_scrape_failure(monkey
   def fake_extract_game(url):
     raise RuntimeError("boom")
 
-  monkeypatch.setattr("src.shl.api.fetch_html", fake_fetch_html)
-  monkeypatch.setattr("src.shl.api.extract_game", fake_extract_game)
+  monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", fake_fetch_html)
+  monkeypatch.setattr("src.shl.helpers.extraction.extract_game", fake_extract_game)
 
   with pytest.raises(ExtractGamesFromListingByDateError, match="Failed to scrape game"):
     extract_games_from_listing_by_date(

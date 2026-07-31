@@ -122,24 +122,11 @@ def extract_game_urls_from_listing_html_by_date(html: str, base_url: str, game_d
 
 
 
-def _get_facade_module():
-    try:
-        import src.shl.api as api
-
-        return api
-    except ModuleNotFoundError:
-        import extract_top_stats as api
-
-        return api
-
-
 def extract_game(url: str) -> Dict[str, object]:
     try:
-        api = _get_facade_module()
-
-        html = api.fetch_html(url)
-        stats = api.parse_top_stats(html)
-        stats["actions"] = api.parse_actions(html, score_period_count=len(stats.get("score", {}).get("periods", [])))
+        html = fetch_html(url)
+        stats = parse_top_stats(html)
+        stats["actions"] = parse_actions(html, score_period_count=len(stats.get("score", {}).get("periods", [])))
         return stats
     except ExtractGameError:
         raise
@@ -147,21 +134,16 @@ def extract_game(url: str) -> Dict[str, object]:
         raise ExtractGameError(f"extract_game failed for '{url}': {exc}") from exc
 
 
-
 def extract_game_by_id(game_id: int) -> Dict[str, object]:
     try:
         normalized_id = int(game_id)
         if normalized_id <= 0:
             raise ValueError("game_id must be a positive integer")
-
-        api = _get_facade_module()
-
-        return api.extract_game(f"https://stats.swehockey.se/Game/Events/{normalized_id}")
+        return extract_game(f"https://stats.swehockey.se/Game/Events/{normalized_id}")
     except ExtractGameError:
         raise
     except Exception as exc:
         raise ExtractGameError(f"extract_game_by_id failed for '{game_id}': {exc}") from exc
-
 
 
 def extract_games_from_listing(listing_url: str) -> List[Dict[str, object]]:
@@ -175,16 +157,13 @@ def extract_games_from_listing(listing_url: str) -> List[Dict[str, object]]:
         ) from exc
 
 
-
 def extract_games_from_listing_with_progress(
     listing_url: str,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
 ) -> List[Dict[str, object]]:
     try:
-        api = _get_facade_module()
-
-        listing_html = api.fetch_html(listing_url)
-        game_urls = api.extract_game_urls_from_listing_html(listing_html, base_url=listing_url)
+        listing_html = fetch_html(listing_url)
+        game_urls = extract_game_urls_from_listing_html(listing_html, base_url=listing_url)
 
         if not game_urls:
             raise ExtractGamesFromListingWithProgressError(
@@ -197,7 +176,7 @@ def extract_games_from_listing_with_progress(
             if progress_callback is not None:
                 progress_callback(index, total, game_url)
             try:
-                results.append(api.extract_game(game_url))
+                results.append(extract_game(game_url))
             except Exception as exc:
                 raise ExtractGamesFromListingWithProgressError(
                     f"Failed to scrape game '{game_url}' from listing page '{listing_url}': {exc}"
@@ -212,13 +191,10 @@ def extract_games_from_listing_with_progress(
         ) from exc
 
 
-
 def extract_games_from_listing_by_date(listing_url: str, game_date: str) -> List[Dict[str, object]]:
     try:
-        api = _get_facade_module()
-
-        listing_html = api.fetch_html(listing_url)
-        game_urls = api.extract_game_urls_from_listing_html_by_date(listing_html, base_url=listing_url, game_date=game_date)
+        listing_html = fetch_html(listing_url)
+        game_urls = extract_game_urls_from_listing_html_by_date(listing_html, base_url=listing_url, game_date=game_date)
 
         if not game_urls:
             return []
@@ -226,7 +202,7 @@ def extract_games_from_listing_by_date(listing_url: str, game_date: str) -> List
         results: List[Dict[str, object]] = []
         for game_url in game_urls:
             try:
-                results.append(api.extract_game(game_url))
+                results.append(extract_game(game_url))
             except Exception as exc:
                 raise ExtractGamesFromListingByDateError(
                     f"Failed to scrape game '{game_url}' for date '{game_date}' from listing page '{listing_url}': {exc}"
