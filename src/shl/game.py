@@ -1,9 +1,34 @@
 import re
 from typing import Dict, List, Optional
 
+from src.shl.helpers.extraction import extract_game, extract_game_by_id
+
 
 class CompareGameScoreChangeError(RuntimeError):
     pass
+
+
+class FetchGameError(RuntimeError):
+    pass
+
+
+def fetch_game(game_url: str) -> Dict[str, object]:
+    try:
+        return extract_game(game_url)
+    except Exception as exc:
+        raise FetchGameError(f"fetch_game failed for '{game_url}': {exc}") from exc
+
+
+def fetch_game_by_id(game_id: int) -> Dict[str, object]:
+    try:
+        return extract_game_by_id(game_id)
+    except Exception as exc:
+        raise FetchGameError(f"fetch_game_by_id failed for '{game_id}': {exc}") from exc
+
+
+# REQ facade aliases.
+fetchGame = fetch_game
+fetchGameById = fetch_game_by_id
 
 
 def _extract_score_pair(game: Dict[str, object]) -> Dict[str, int]:

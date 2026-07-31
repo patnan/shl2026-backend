@@ -1,7 +1,13 @@
 from typing import Dict, List
 
+from src.shl.helpers.extraction import extract_games_from_listing
+
 
 class CalculateStandingsError(RuntimeError):
+    pass
+
+
+class FetchTableError(RuntimeError):
     pass
 
 
@@ -129,6 +135,18 @@ def calculate_standings(games: List[Dict]) -> List[Dict]:
         raise
     except Exception as exc:
         raise CalculateStandingsError(f"calculate_standings failed: {exc}") from exc
+
+
+def fetch_table(listing_url: str) -> List[Dict]:
+    try:
+        games = extract_games_from_listing(listing_url)
+        return calculate_standings(games)
+    except Exception as exc:
+        raise FetchTableError(f"fetch_table failed for '{listing_url}': {exc}") from exc
+
+
+# REQ facade alias.
+fetchTable = fetch_table
 
 
 

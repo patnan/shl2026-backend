@@ -16,6 +16,13 @@ GAME_ID = 1004357
 
 ROUND_DATE = "2025-09-16"
 
+
+def _make_progress_printer(test_name: str):
+    def on_progress(index, total, url):
+        print(f"\r{test_name}: [{index}/{total}] {url}", end="", flush=True)
+
+    return on_progress
+
 @pytest.mark.integration
 def test_scrape_game_id_real_network():
     result = extract_game_by_id(GAME_ID)
@@ -28,9 +35,8 @@ def test_scrape_game_id_real_network():
 
 @pytest.mark.integration
 def test_extract_all_games_from_season():
-    def on_progress(index, total, url):
-        print(f"\r[{index}/{total}] {url}", end="", flush=True)
-
+    print(f"test_extract_all_games_from_season: starting schedule extraction from {SEASON_SCHEDULE_URL}")
+    on_progress = _make_progress_printer("test_extract_all_games_from_season")
     games = extract_games_from_listing_with_progress(SEASON_SCHEDULE_URL, progress_callback=on_progress)
     print()
 
@@ -57,6 +63,7 @@ def test_extract_all_games_from_season():
 
 @pytest.mark.integration
 def test_extract_games_by_date_from_season():
+    print(f"test_extract_games_by_date_from_season: starting schedule extraction for date {ROUND_DATE} from {SEASON_SCHEDULE_URL}")
     games = extract_games_from_listing_by_date(SEASON_SCHEDULE_URL, ROUND_DATE)
 
     assert len(games) > 0
@@ -78,9 +85,8 @@ def test_extract_games_by_date_from_season():
 
 @pytest.mark.integration
 def test_calculated_standings_match_overview():
-    def on_progress(index, total, url):
-        print(f"\r[{index}/{total}] {url}", end="", flush=True)
-
+    print(f"test_calculated_standings_match_overview: starting schedule extraction from {SEASON_SCHEDULE_URL}")
+    on_progress = _make_progress_printer("test_calculated_standings_match_overview")
     games = extract_games_from_listing_with_progress(SEASON_SCHEDULE_URL, progress_callback=on_progress)
     print()
 
