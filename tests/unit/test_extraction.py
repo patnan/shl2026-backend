@@ -1,6 +1,6 @@
 import pytest
 
-from src.shl.api import (
+from src.shl.helpers.extraction import (
     ExtractGameError,
     ExtractGamesFromListingByDateError,
     GameScrapeError,

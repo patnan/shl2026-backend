@@ -1,6 +1,13 @@
 import pytest
 
-from src.shl.api import extract_game_by_id, extract_games_from_listing_by_date, extract_games_from_listing_with_progress
+from src.shl.api import (
+    calculate_standings,
+    extract_game_by_id,
+    extract_games_from_listing_by_date,
+    extract_games_from_listing_with_progress,
+)
+from src.shl.helpers.extraction import fetch_html
+from tests.helpers import compare_standings, parse_overview_standings_html
 
 
 SEASON_SCHEDULE_URL = "https://stats.swehockey.se/ScheduleAndResults/Schedule/18263"
@@ -67,3 +74,21 @@ def test_extract_games_by_date_from_season():
         assert s.get("current"), f"game {i} missing score current"
         assert isinstance(s.get("home_score"), int), f"game {i} home_score is not int"
         assert isinstance(s.get("away_score"), int), f"game {i} away_score is not int"
+
+
+@pytest.mark.integration
+def test_calculated_standings_match_overview():
+    def on_progress(index, total, url):
+        print(f"\r[{index}/{total}] {url}", end="", flush=True)
+
+    games = extract_games_from_listing_with_progress(SEASON_SCHEDULE_URL, progress_callback=on_progress)
+    print()
+
+    overview_url = SEASON_SCHEDULE_URL.replace("Schedule", "Overview")
+    overview_html = fetch_html(overview_url)
+
+    calculated = calculate_standings(games)
+    overview = parse_overview_standings_html(overview_html)
+    mismatches = compare_standings(calculated, overview)
+
+    assert mismatches == [], f"Standings mismatches found:\n" + "\n".join(str(m) for m in mismatches)

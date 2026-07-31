@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from src.shl.api import (
+from src.shl.helpers.parsing import (
     ParseScoreBlockError,
     ParseTopStatsError,
     extract_penalty_metadata,

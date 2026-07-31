@@ -1,5 +1,6 @@
 import json
 import pytest
+from pathlib import Path
 from unittest.mock import patch
 
 from src.cli import main
@@ -24,10 +25,24 @@ def test_scrape_game_id_prints_json(capsys, monkeypatch):
 
 
 def test_scrape_game_id_raises_for_invalid_id(monkeypatch):
-    from src.shl.extraction import ExtractGameError
+    from src.shl.helpers.extraction import ExtractGameError
     monkeypatch.setattr("src.cli.extract_game_by_id", lambda game_id: (_ for _ in ()).throw(ExtractGameError("positive integer")))
 
     with patch("sys.argv", ["cli", "scrape", "--game-id", "1004357"]):
         with pytest.raises(ExtractGameError, match="positive integer"):
             main()
+
+
+def test_cmd_compare_prints_result(tmp_path, capsys):
+    prev = tmp_path / "prev.json"
+    curr = tmp_path / "curr.json"
+    prev.write_text(json.dumps({"game": {"home_team": "A", "away_team": "B"}, "score": {"current": "0-0"}}), encoding="utf-8")
+    curr.write_text(json.dumps({"game": {"home_team": "A", "away_team": "B"}, "score": {"current": "1-0"}}), encoding="utf-8")
+
+    with patch("sys.argv", ["cli", "compare", str(prev), str(curr)]):
+        main()
+
+    result = json.loads(capsys.readouterr().out)
+    assert result["scored"] is True
+    assert result["teams_scored"][0]["team"] == "A"
 

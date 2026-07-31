@@ -1,31 +1,9 @@
-import json
 import re
-from pathlib import Path
 from typing import Dict, List, Optional
 
 
-class GameScrapeError(RuntimeError):
+class CompareGameScoreChangeError(RuntimeError):
     pass
-
-
-class LoadGameObjectFromFileError(GameScrapeError):
-    pass
-
-
-class CompareGameScoreChangeError(GameScrapeError):
-    pass
-
-
-def load_game_object_from_file(file_path: str) -> Dict[str, object]:
-    try:
-        data = json.loads(Path(file_path).read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise LoadGameObjectFromFileError(f"File '{file_path}' does not contain a JSON object")
-        return data
-    except LoadGameObjectFromFileError:
-        raise
-    except Exception as exc:
-        raise LoadGameObjectFromFileError(f"load_game_object_from_file failed for '{file_path}': {exc}") from exc
 
 
 def _extract_score_pair(game: Dict[str, object]) -> Dict[str, int]:
@@ -340,16 +318,3 @@ def compare_game_score_change(previous_game: Dict[str, object], current_game: Di
         raise
     except Exception as exc:
         raise CompareGameScoreChangeError(f"compare_game_score_change failed: {exc}") from exc
-
-
-def compare_game_score_change_from_files(previous_file_path: str, current_file_path: str) -> Dict[str, object]:
-    try:
-        previous_game = load_game_object_from_file(previous_file_path)
-        current_game = load_game_object_from_file(current_file_path)
-        return compare_game_score_change(previous_game, current_game)
-    except (LoadGameObjectFromFileError, CompareGameScoreChangeError):
-        raise
-    except Exception as exc:
-        raise CompareGameScoreChangeError(
-            f"compare_game_score_change_from_files failed for '{previous_file_path}' and '{current_file_path}': {exc}"
-        ) from exc

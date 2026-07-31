@@ -5,18 +5,13 @@ import json
 from pathlib import Path
 
 from src.shl.api import (
-    build_validation_report,
     calculate_standings,
-    compare_game_score_change_from_files,
-    extract_game,
+    compare_game_score_change,
     extract_game_by_id,
     extract_games_from_listing_by_date,
     extract_games_from_listing_with_progress,
-    fetch_html,
-    load_or_fetch_season_validation_inputs,
-    validate_multiple_seasons,
-    validate_season_standings,
 )
+from src.shl.helpers.extraction import fetch_html
 
 
 CSV_COLUMNS = [
@@ -151,93 +146,15 @@ def cmd_scrape(args: argparse.Namespace, cache_dir: Path) -> None:
 
 
 def cmd_validate(args: argparse.Namespace, cache_dir: Path) -> None:
-    if args.season_ids:
-        def make_progress_callback(batch_index: int, batch_total: int, season_id: int):
-            def on_progress(index: int, total: int, game_url: str) -> None:
-                print(f"[{batch_index}/{batch_total}] season {season_id} [{index}/{total}] scraping {game_url}", flush=True)
-            return on_progress
+    season_id = args.season_id
+    overview_url = f"https://stats.swehockey.se/ScheduleAndResults/Overview/{season_id}"
 
-        batch = validate_multiple_seasons(
-            args.season_ids,
-            progress_callback_factory=make_progress_callback,
-            cache_dir=cache_dir,
-        )
-
-        if args.output:
-            out = resolve_output_path(cache_dir, args.output)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(json.dumps(batch, ensure_ascii=False, indent=2), encoding="utf-8")
-            print(f"Saved batch validation JSON to: {out}")
-
-        print(f"Validated seasons: {', '.join(str(s) for s in args.season_ids)}")
-        print(f"All match: {batch['all_match']}")
-        print(f"Successful seasons: {batch['successful_seasons']}")
-        print(f"Failed seasons: {batch['failed_seasons']}")
-        print(f"Mismatching seasons: {batch['mismatching_seasons']}")
-        for result in batch["results"]:
-            status = "match" if result["matches"] and result["error"] is None else "failed"
-            if result["error"] is None and not result["matches"]:
-                status = "mismatch"
-            print(
-                f"Season {result['season_id']}: status={status}, mismatches={result['mismatch_count']}, "
-                f"games_source={result['games_source']}, overview_source={result['overview_source']}, error={result['error']}"
-            )
-        return
-
-    if args.validate:
-        games = None
-        overview_html = None
-
-        if args.games_input:
-            games = json.loads(resolve_input_path(cache_dir, args.games_input).read_text(encoding="utf-8"))
-        if args.overview_input:
-            overview_html = resolve_input_path(cache_dir, args.overview_input).read_text(encoding="utf-8")
-
-        def on_progress(index: int, total: int, game_url: str) -> None:
-            print(f"[{index}/{total}] scraping {game_url}", flush=True)
-
-        season_inputs = load_or_fetch_season_validation_inputs(
-            args.season_id,
-            cache_dir=cache_dir,
-            progress_callback=on_progress if games is None else None,
-            games=games,
-            overview_html=overview_html,
-        )
-        validation = validate_season_standings(args.season_id, games=season_inputs["games"], overview_html=season_inputs["overview_html"])
-        report = build_validation_report(validation)
-
-        if args.output:
-            out = resolve_output_path(cache_dir, args.output)
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-            print(f"Saved validation report JSON to: {out}")
-
-        if args.full_output:
-            full_out = resolve_output_path(cache_dir, args.full_output)
-            full_out.parent.mkdir(parents=True, exist_ok=True)
-            full_out.write_text(json.dumps(validation, ensure_ascii=False, indent=2), encoding="utf-8")
-            print(f"Saved full validation JSON to: {full_out}")
-
-        print(f"Season: {args.season_id}")
-        print(f"Matches overview: {report['matches']}")
-        print(f"Mismatch count: {report['mismatch_count']}")
-        print(f"Games source: {args.games_input or season_inputs['games_source']}")
-        print(f"Overview source: {args.overview_input or season_inputs['overview_source']}")
-        if report["mismatches"]:
-            print("Mismatches:")
-            for mismatch in report["mismatches"]:
-                print(json.dumps(mismatch, ensure_ascii=False))
-        return
-
-    overview_url = f"https://stats.swehockey.se/ScheduleAndResults/Overview/{args.season_id}"
     html = fetch_html(overview_url)
-
     if args.output:
         out = resolve_output_path(cache_dir, args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(html, encoding="utf-8")
         print(f"Saved HTML to: {out}")
-
     print(f"Loaded {len(html)} characters from: {overview_url}")
     print(f"Consent markers detected: {'Responsible use of your data' in html or 'Cookiebot' in html}")
     print(f"Standings markers detected: {'Group Standings' in html or 'GF:GA' in html or 'GWSW' in html}")
@@ -246,7 +163,9 @@ def cmd_validate(args: argparse.Namespace, cache_dir: Path) -> None:
 
 
 def cmd_compare(args: argparse.Namespace, cache_dir: Path) -> None:
-    result = compare_game_score_change_from_files(args.previous_file, args.current_file)
+    previous_game = json.loads(Path(args.previous_file).read_text(encoding="utf-8"))
+    current_game = json.loads(Path(args.current_file).read_text(encoding="utf-8"))
+    result = compare_game_score_change(previous_game, current_game)
 
     if args.output:
         out = resolve_output_path(cache_dir, args.output)
@@ -273,14 +192,9 @@ def main() -> None:
     p_scrape.add_argument("--csv-output", help="Save standings as CSV to this path")
 
     # validate
-    p_val = sub.add_parser("validate", help="Validate standings or fetch overview page")
+    p_val = sub.add_parser("validate", help="Fetch and preview overview page for a season")
     p_val.add_argument("season_id", nargs="?", type=int, default=18263, help="Season/tournament id")
-    p_val.add_argument("--season-ids", nargs="+", type=int, help="Batch of season ids to validate")
-    p_val.add_argument("--validate", action="store_true", help="Compare calculated vs overview standings")
-    p_val.add_argument("--games-input", help="Path to previously scraped games JSON")
-    p_val.add_argument("--overview-input", help="Path to saved overview HTML")
-    p_val.add_argument("--output", help="Output path for report JSON or raw HTML")
-    p_val.add_argument("--full-output", help="Output path for full validation JSON payload")
+    p_val.add_argument("--output", help="Output path for raw HTML")
     p_val.add_argument("--preview-chars", type=int, default=1000, help="Characters of HTML preview to print (default: 1000)")
 
     # compare

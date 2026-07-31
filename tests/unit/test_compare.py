@@ -2,11 +2,9 @@ import json
 
 import pytest
 
-from src.shl.api import (
-    CompareGameScoreChangeError,
-    compare_game_score_change,
-    compare_game_score_change_from_files,
-)
+from src.shl.game import CompareGameScoreChangeError
+from src.shl.api import compare_game_score_change
+from tests.helpers import compare_game_score_change_from_files, LoadGameObjectFromFileError
 
 def test_compare_game_score_change_detects_scoring_team_from_current_scores():
   previous = {
@@ -103,6 +101,15 @@ def test_compare_game_score_change_from_files_loads_two_dicts_and_compares(tmp_p
     }
   ]
   assert result["score"] == "0-1"
+
+
+def test_load_game_object_from_file_raises_for_non_object(tmp_path):
+  f = tmp_path / "bad.json"
+  f.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+
+  from tests.helpers import load_game_object_from_file
+  with pytest.raises(LoadGameObjectFromFileError, match="does not contain a JSON object"):
+    load_game_object_from_file(str(f))
 
 
 def test_compare_game_score_change_returns_scorer_and_time_from_actions():
