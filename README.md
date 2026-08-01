@@ -12,7 +12,7 @@ Code root: [src](src)
 - Compute standings from played games.
 - Fetch standings from SweHockey overview pages.
 - Compare two game snapshots and detect scoring changes.
-- CLI support for scraping, overview validation preview, and snapshot comparison.
+- CLI support for scraping, overview validation preview, snapshot comparison, poller seeding/worker runs, and REST API serving.
 
 ## Data models
 
@@ -55,7 +55,7 @@ Key model types:
   SweHockey-specific parsing logic for top stats and actions.
 
 - [src/cli.py](src/cli.py)
-  CLI entrypoint with scrape, validate, and compare commands.
+  CLI entrypoint with scrape, validate, compare, serve, poller-seed, and poller-run commands.
 
 ## Persistence and cache
 
@@ -98,6 +98,47 @@ Compare two snapshot files:
 
 ```bash
 python -m src.cli compare cache/aggregated_1004357-a.json cache/aggregated_1004357-b.json
+```
+
+Run REST API (Swagger at /docs):
+
+```bash
+python -m src.cli serve --host 127.0.0.1 --port 8000
+```
+
+Seed poll targets for a season:
+
+```bash
+python -m src.cli poller-seed 18263
+```
+
+Seed only schedule and standings targets (skip game targets):
+
+```bash
+python -m src.cli poller-seed 18263 --skip-games
+```
+
+Run poller worker loop:
+
+```bash
+python -m src.cli poller-run --tick-interval 5 --max-ticks 10
+```
+
+Typical first run (seed -> poll -> API):
+
+```bash
+# 1) Seed targets for one season
+python -m src.cli poller-seed 18263
+
+# 2) Run a short worker cycle to populate cache/db
+python -m src.cli poller-run --tick-interval 1 --max-ticks 5
+
+# 3) Start API server
+python -m src.cli serve --host 127.0.0.1 --port 8000
+
+# 4) In another terminal, query persisted data
+curl "http://127.0.0.1:8000/seasons/18263/standings"
+curl "http://127.0.0.1:8000/seasons/18263/games?date=2025-09-16"
 ```
 
 ## Python API usage

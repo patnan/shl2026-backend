@@ -13,6 +13,7 @@ from src.shl.api import (
 )
 from src.shl.models import Game
 from src.shl.helpers.extraction import fetch_html
+from src.shl.poller import run_poller_worker, seed_season_targets
 
 
 CSV_COLUMNS = [
@@ -177,6 +178,33 @@ def cmd_compare(args: argparse.Namespace, cache_dir: Path) -> None:
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
 
 
+def cmd_serve(args: argparse.Namespace, cache_dir: Path) -> None:
+    from src.shl.rest_api import create_app
+    import uvicorn
+
+    app = create_app(cache_dir)
+    uvicorn.run(app, host=args.host, port=args.port, reload=args.reload)
+
+
+def cmd_poller_seed(args: argparse.Namespace, cache_dir: Path) -> None:
+    result = seed_season_targets(
+        cache_dir,
+        season_id=args.season_id,
+        include_games=not args.skip_games,
+        force_reparse_schedule=args.force_reparse_schedule,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def cmd_poller_run(args: argparse.Namespace, cache_dir: Path) -> None:
+    result = run_poller_worker(
+        cache_dir,
+        tick_interval_seconds=args.tick_interval,
+        max_ticks=args.max_ticks,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="SHL scraper and validation toolkit")
     parser.add_argument("--cache-dir", default="cache", help="Cache directory (default: cache)")
@@ -204,11 +232,35 @@ def main() -> None:
     p_cmp.add_argument("current_file", help="Path to current game JSON file")
     p_cmp.add_argument("--output", help="Output path for comparison result JSON")
 
+    # serve
+    p_srv = sub.add_parser("serve", help="Run REST API server over persisted DB data")
+    p_srv.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
+    p_srv.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
+    p_srv.add_argument("--reload", action="store_true", help="Enable auto-reload (development)")
+
+    # poller seed
+    p_seed = sub.add_parser("poller-seed", help="Seed poll targets for a season")
+    p_seed.add_argument("season_id", type=int, help="Season/tournament id")
+    p_seed.add_argument("--skip-games", action="store_true", help="Seed only schedule and standings targets")
+    p_seed.add_argument("--force-reparse-schedule", action="store_true", help="Force schedule refetch when seeding game targets")
+
+    # poller run
+    p_run = sub.add_parser("poller-run", help="Run single-process poller worker loop")
+    p_run.add_argument("--tick-interval", type=float, default=5.0, help="Seconds between ticks (default: 5.0)")
+    p_run.add_argument("--max-ticks", type=int, help="Stop after N ticks (default: run forever)")
+
     args = parser.parse_args()
     cache_dir = Path(args.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    {"scrape": cmd_scrape, "validate": cmd_validate, "compare": cmd_compare}[args.command](args, cache_dir)
+    {
+        "scrape": cmd_scrape,
+        "validate": cmd_validate,
+        "compare": cmd_compare,
+        "serve": cmd_serve,
+        "poller-seed": cmd_poller_seed,
+        "poller-run": cmd_poller_run,
+    }[args.command](args, cache_dir)
 
 
 if __name__ == "__main__":

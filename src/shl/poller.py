@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import re
 from time import perf_counter
 from time import sleep as _sleep
 from typing import Dict, List
@@ -12,6 +13,7 @@ from src.shl.standings import fetch_table
 from src.shl.store import (
     insert_domain_event,
     list_due_poll_targets,
+    upsert_poll_target,
     update_poll_error,
     update_poll_success,
 )
@@ -52,6 +54,69 @@ def _compute_error_next_poll(target_type: str, now: datetime, current_error_coun
     # Simple exponential backoff capped at x32.
     multiplier = 2 ** min(max(current_error_count, 0), 5)
     return _to_iso(now + timedelta(seconds=base * multiplier))
+
+
+def _extract_game_ids_from_schedule_entries(entries: List[object]) -> List[int]:
+    game_ids = set()
+    for entry in entries:
+        game_url = getattr(entry, "game_url", "")
+        match = re.search(r"/(\d+)$", game_url)
+        if match is None:
+            continue
+        game_ids.add(int(match.group(1)))
+    return sorted(game_ids)
+
+
+def seed_season_targets(
+    cache_dir: Path,
+    season_id: int,
+    include_games: bool = True,
+    force_reparse_schedule: bool = False,
+) -> Dict[str, int]:
+    now_iso = _to_iso(_now_utc())
+
+    upsert_poll_target(
+        cache_dir,
+        target_type="schedule",
+        target_key=str(season_id),
+        enabled=True,
+        next_poll_at=now_iso,
+    )
+    upsert_poll_target(
+        cache_dir,
+        target_type="standings",
+        target_key=str(season_id),
+        enabled=True,
+        next_poll_at=now_iso,
+    )
+
+    game_targets_created = 0
+    game_ids: List[int] = []
+
+    if include_games:
+        schedule_entries = fetch_schedule(
+            season_id,
+            cache_dir,
+            force_reparse=force_reparse_schedule,
+        )
+        game_ids = _extract_game_ids_from_schedule_entries(schedule_entries)
+        for game_id in game_ids:
+            upsert_poll_target(
+                cache_dir,
+                target_type="game",
+                target_key=str(game_id),
+                enabled=True,
+                next_poll_at=now_iso,
+            )
+        game_targets_created = len(game_ids)
+
+    return {
+        "season_id": season_id,
+        "schedule_target": 1,
+        "standings_target": 1,
+        "game_targets": game_targets_created,
+        "total_targets": 2 + game_targets_created,
+    }
 
 
 def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:

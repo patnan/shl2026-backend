@@ -250,10 +250,26 @@ Phase 1 Step 3 completion notes:
 1. Added single-process worker loop in [src/shl/poller.py](src/shl/poller.py) via run_poller_worker.
 2. Worker supports bounded execution via max_ticks and tracks ok/error result counts.
 3. Added loop and validation tests in [tests/unit/test_poller.py](tests/unit/test_poller.py).
+4. Added seeding workflow in [src/shl/poller.py](src/shl/poller.py) via seed_season_targets and CLI commands in [src/cli.py](src/cli.py): poller-seed and poller-run.
 
 Phase 2:
-1. add REST API server endpoints over get methods
-2. add freshness metadata in responses
+1. [x] add REST API server endpoints over get methods
+2. [x] add freshness metadata in responses
+
+Phase 2 Step 1 completion notes:
+1. Added FastAPI app factory in [src/shl/rest_api.py](src/shl/rest_api.py) with endpoints:
+	- /health
+	- /seasons/{season_id}/schedule
+	- /seasons/{season_id}/games?date=YYYY-MM-DD
+	- /seasons/{season_id}/games/played
+	- /seasons/{season_id}/standings
+2. Added CLI serve command in [src/cli.py](src/cli.py) to run API via uvicorn.
+3. Added API tests in [tests/unit/test_rest_api.py](tests/unit/test_rest_api.py).
+
+Phase 2 Step 2 completion notes:
+1. Added storage freshness helpers in [src/shl/store.py](src/shl/store.py): schedule/standings/game fetched-at accessors and game freshness summary.
+2. Extended API metadata in [src/shl/rest_api.py](src/shl/rest_api.py) with source freshness fields for schedule, played games, date-filtered games, and computed standings inputs.
+3. Expanded API tests in [tests/unit/test_rest_api.py](tests/unit/test_rest_api.py) to validate freshness metadata fields.
 
 Phase 3:
 1. add outbox worker and notifications

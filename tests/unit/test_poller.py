@@ -5,6 +5,7 @@ import pytest
 from src.shl.poller import PollerError, run_poller_tick, run_poller_worker
 from src.shl.store import (
     list_due_poll_targets,
+    list_poll_targets,
     list_unprocessed_domain_events,
     mark_domain_event_processed,
     upsert_poll_target,
@@ -155,3 +156,73 @@ def test_run_poller_worker_validates_parameters(tmp_path):
 
     with pytest.raises(PollerError, match="max_ticks"):
         run_poller_worker(tmp_path, max_ticks=0)
+
+
+def test_seed_season_targets_creates_schedule_standings_and_game_targets(monkeypatch, tmp_path):
+    from src.shl.models import ScheduleEntry
+    from src.shl.poller import seed_season_targets
+
+    monkeypatch.setattr(
+        "src.shl.poller.fetch_schedule",
+        lambda season_id, cache_dir, force_reparse=False: [
+            ScheduleEntry(
+                date="2025-09-16",
+                time="19:00",
+                game_result="",
+                spectators="",
+                venue="",
+                game_url="https://stats.swehockey.se/Game/Events/1004308",
+                round="1",
+            ),
+            ScheduleEntry(
+                date="2025-09-16",
+                time="19:00",
+                game_result="",
+                spectators="",
+                venue="",
+                game_url="https://stats.swehockey.se/Game/Events/1004308",
+                round="1",
+            ),
+            ScheduleEntry(
+                date="2025-09-16",
+                time="19:00",
+                game_result="",
+                spectators="",
+                venue="",
+                game_url="https://stats.swehockey.se/Game/Events/1004309",
+                round="1",
+            ),
+        ],
+    )
+
+    result = seed_season_targets(tmp_path, season_id=18263, include_games=True)
+
+    assert result["schedule_target"] == 1
+    assert result["standings_target"] == 1
+    assert result["game_targets"] == 2
+    assert result["total_targets"] == 4
+
+    targets = list_poll_targets(tmp_path)
+    assert len(targets) == 4
+    assert {(t["target_type"], t["target_key"]) for t in targets} == {
+        ("schedule", "18263"),
+        ("standings", "18263"),
+        ("game", "1004308"),
+        ("game", "1004309"),
+    }
+
+
+def test_seed_season_targets_can_skip_game_targets(monkeypatch, tmp_path):
+    from src.shl.poller import seed_season_targets
+
+    monkeypatch.setattr("src.shl.poller.fetch_schedule", lambda *args, **kwargs: pytest.fail("fetch_schedule should not be called"))
+
+    result = seed_season_targets(tmp_path, season_id=18263, include_games=False)
+    assert result["game_targets"] == 0
+    assert result["total_targets"] == 2
+
+    targets = list_poll_targets(tmp_path)
+    assert {(t["target_type"], t["target_key"]) for t in targets} == {
+        ("schedule", "18263"),
+        ("standings", "18263"),
+    }

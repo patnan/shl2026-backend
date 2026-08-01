@@ -46,3 +46,45 @@ def test_cmd_compare_prints_result(tmp_path, capsys):
     assert result["scored"] is True
     assert result["teams_scored"][0]["team"] == "A"
 
+
+def test_cmd_poller_seed_prints_result(capsys, monkeypatch):
+    captured = {}
+
+    def fake_seed(cache_dir, season_id, include_games, force_reparse_schedule):
+        captured["season_id"] = season_id
+        captured["include_games"] = include_games
+        captured["force_reparse_schedule"] = force_reparse_schedule
+        return {"season_id": season_id, "total_targets": 4}
+
+    monkeypatch.setattr("src.cli.seed_season_targets", fake_seed)
+
+    with patch("sys.argv", ["cli", "poller-seed", "18263", "--force-reparse-schedule"]):
+        main()
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["season_id"] == 18263
+    assert out["total_targets"] == 4
+    assert captured == {
+        "season_id": 18263,
+        "include_games": True,
+        "force_reparse_schedule": True,
+    }
+
+
+def test_cmd_poller_run_prints_result(capsys, monkeypatch):
+    captured = {}
+
+    def fake_run(cache_dir, tick_interval_seconds, max_ticks):
+        captured["tick_interval_seconds"] = tick_interval_seconds
+        captured["max_ticks"] = max_ticks
+        return {"ticks": 2, "ok_results": 1, "error_results": 0}
+
+    monkeypatch.setattr("src.cli.run_poller_worker", fake_run)
+
+    with patch("sys.argv", ["cli", "poller-run", "--tick-interval", "0.25", "--max-ticks", "2"]):
+        main()
+
+    out = json.loads(capsys.readouterr().out)
+    assert out == {"ticks": 2, "ok_results": 1, "error_results": 0}
+    assert captured == {"tick_interval_seconds": 0.25, "max_ticks": 2}
+

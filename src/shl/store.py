@@ -92,6 +92,12 @@ def load_game(cache_dir: Path, game_id: int) -> Optional[Game]:
     return Game.from_dict(json.loads(row[0])) if row else None
 
 
+def get_game_fetched_at(cache_dir: Path, game_id: int) -> Optional[str]:
+    with _connect(cache_dir) as conn:
+        row = conn.execute("SELECT fetched_at FROM games WHERE game_id = ?", (game_id,)).fetchone()
+    return row[0] if row else None
+
+
 def save_game(cache_dir: Path, game_id: int, game: Game) -> None:
     with _connect(cache_dir) as conn:
         conn.execute(
@@ -106,6 +112,12 @@ def load_standings(cache_dir: Path, season_id: int) -> Optional[List[StandingsRo
     return [StandingsRow.from_dict(e) for e in json.loads(row[0])] if row else None
 
 
+def get_standings_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    with _connect(cache_dir) as conn:
+        row = conn.execute("SELECT fetched_at FROM standings WHERE season_id = ?", (season_id,)).fetchone()
+    return row[0] if row else None
+
+
 def save_standings(cache_dir: Path, season_id: int, standings: List[StandingsRow]) -> None:
     with _connect(cache_dir) as conn:
         conn.execute(
@@ -118,6 +130,40 @@ def load_schedule(cache_dir: Path, season_id: int) -> Optional[List[ScheduleEntr
     with _connect(cache_dir) as conn:
         row = conn.execute("SELECT data FROM schedule WHERE season_id = ?", (season_id,)).fetchone()
     return [ScheduleEntry.from_dict(e) for e in json.loads(row[0])] if row else None
+
+
+def get_schedule_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    with _connect(cache_dir) as conn:
+        row = conn.execute("SELECT fetched_at FROM schedule WHERE season_id = ?", (season_id,)).fetchone()
+    return row[0] if row else None
+
+
+def get_games_freshness(cache_dir: Path, game_ids: List[int]) -> Dict[str, Optional[Any]]:
+    if not game_ids:
+        return {
+            "requested_game_count": 0,
+            "cached_game_count": 0,
+            "latest_fetched_at": None,
+            "oldest_fetched_at": None,
+        }
+
+    placeholders = ",".join("?" for _ in game_ids)
+    with _connect(cache_dir) as conn:
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*), MAX(fetched_at), MIN(fetched_at)
+            FROM games
+            WHERE game_id IN ({placeholders})
+            """,
+            tuple(game_ids),
+        ).fetchone()
+
+    return {
+        "requested_game_count": len(game_ids),
+        "cached_game_count": int(row[0] or 0),
+        "latest_fetched_at": row[1],
+        "oldest_fetched_at": row[2],
+    }
 
 
 def save_schedule(cache_dir: Path, season_id: int, schedule: List[ScheduleEntry]) -> None:
@@ -215,6 +261,65 @@ def list_due_poll_targets(cache_dir: Path, now_iso: Optional[str] = None) -> Lis
             "last_duration_ms": row[8],
         })
     return result
+
+
+def list_poll_targets(
+    cache_dir: Path,
+    target_type: Optional[str] = None,
+    enabled_only: bool = False,
+) -> List[Dict[str, Any]]:
+    where_clauses = []
+    params: List[Any] = []
+
+    if target_type is not None:
+        where_clauses.append("t.target_type = ?")
+        params.append(target_type)
+    if enabled_only:
+        where_clauses.append("t.enabled = 1")
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    with _connect(cache_dir) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+                t.id,
+                t.target_type,
+                t.target_key,
+                t.enabled,
+                t.created_at,
+                t.updated_at,
+                s.last_success_at,
+                s.last_error_at,
+                s.error_count,
+                s.next_poll_at,
+                s.last_duration_ms
+            FROM poll_targets t
+            LEFT JOIN poll_state s ON s.target_id = t.id
+            {where_sql}
+            ORDER BY t.id ASC
+            """,
+            tuple(params),
+        ).fetchall()
+
+    targets: List[Dict[str, Any]] = []
+    for row in rows:
+        targets.append({
+            "id": int(row[0]),
+            "target_type": row[1],
+            "target_key": row[2],
+            "enabled": bool(row[3]),
+            "created_at": row[4],
+            "updated_at": row[5],
+            "last_success_at": row[6],
+            "last_error_at": row[7],
+            "error_count": int(row[8] or 0),
+            "next_poll_at": row[9],
+            "last_duration_ms": row[10],
+        })
+    return targets
 
 
 def update_poll_success(cache_dir: Path, target_id: int, duration_ms: int, next_poll_at: str) -> None:
