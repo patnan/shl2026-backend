@@ -22,6 +22,9 @@ Model documentation:
 - [MODELS.md](MODELS.md)
 - [MODELS.m](MODELS.m)
 
+Architecture and implementation planning:
+- [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md)
+
 Key model types:
 - Game
 - ScheduleEntry
