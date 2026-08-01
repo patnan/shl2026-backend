@@ -276,8 +276,14 @@ Phase 3:
 2. add admin force-reparse endpoints
 
 Phase 4:
-1. harden observability and failure recovery
+1. [x] harden observability and failure recovery
 2. add integration tests for poll lifecycle and event generation
+
+Phase 4 Step 1 completion notes:
+1. Enhanced poll failure recovery in [src/shl/poller.py](src/shl/poller.py) with jittered exponential backoff and a circuit-breaker cooldown mode after repeated target failures.
+2. Added structured poller observability logs in [src/shl/poller.py](src/shl/poller.py) for per-target results, per-tick summaries, and worker summaries.
+3. Extended worker summary metrics in [src/shl/poller.py](src/shl/poller.py) to include stale target counts, duration aggregates, total processed results, and worker start/finish timestamps.
+4. Added/updated unit coverage in [tests/unit/test_poller.py](tests/unit/test_poller.py) for recovery mode fields, worker metric summaries, and circuit-breaker backoff behavior.
 
 ## Open Decisions
 

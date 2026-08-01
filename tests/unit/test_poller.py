@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.shl.poller import PollerError, run_poller_tick, run_poller_worker
+from src.shl.poller import PollerError, _compute_error_next_poll, run_poller_tick, run_poller_worker
 from src.shl.store import (
     list_due_poll_targets,
     list_poll_targets,
@@ -97,6 +97,8 @@ def test_run_poller_tick_failure_updates_state_and_writes_event(monkeypatch, tmp
     assert len(results) == 1
     assert results[0]["status"] == "error"
     assert results[0]["error_count"] == 1
+    assert results[0]["recovery_mode"] == "backoff"
+    assert results[0]["retry_in_seconds"] > 0
     assert "network down" in results[0]["error"]
 
     events = list_unprocessed_domain_events(tmp_path)
@@ -146,7 +148,12 @@ def test_run_poller_worker_runs_max_ticks(monkeypatch, tmp_path):
 
     summary = run_poller_worker(tmp_path, tick_interval_seconds=0.01, max_ticks=3)
 
-    assert summary == {"ticks": 3, "ok_results": 3, "error_results": 3}
+    assert summary["ticks"] == 3
+    assert summary["ok_results"] == 3
+    assert summary["error_results"] == 3
+    assert summary["total_results"] == 6
+    assert "worker_started_at" in summary
+    assert "worker_completed_at" in summary
     assert calls == {"ticks": 3, "sleeps": 2}
 
 
@@ -226,3 +233,14 @@ def test_seed_season_targets_can_skip_game_targets(monkeypatch, tmp_path):
         ("schedule", "18263"),
         ("standings", "18263"),
     }
+
+
+def test_compute_error_next_poll_uses_circuit_breaker_cooldown(monkeypatch):
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("src.shl.poller.random.randint", lambda low, high: high)
+
+    # Error count at threshold should switch to the larger cooldown window.
+    next_poll_at = _compute_error_next_poll("schedule", now, current_error_count=5)
+    retry_seconds = int((datetime.fromisoformat(next_poll_at) - now).total_seconds())
+    assert retry_seconds >= 20 * 60

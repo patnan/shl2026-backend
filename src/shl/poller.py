@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
+import logging
 from pathlib import Path
+import random
 import re
 from time import perf_counter
 from time import sleep as _sleep
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from src.shl.game import fetch_game
 from src.shl.schedule import fetch_schedule
@@ -23,6 +26,9 @@ class PollerError(RuntimeError):
     pass
 
 
+logger = logging.getLogger(__name__)
+
+
 DEFAULT_SUCCESS_INTERVAL_SECONDS = {
     "game": 60,
     "schedule": 15 * 60,
@@ -34,6 +40,14 @@ DEFAULT_ERROR_BASE_INTERVAL_SECONDS = {
     "schedule": 60,
     "standings": 60,
 }
+
+CIRCUIT_BREAKER_ERROR_THRESHOLD = 5
+CIRCUIT_BREAKER_COOLDOWN_SECONDS = {
+    "game": 5 * 60,
+    "schedule": 20 * 60,
+    "standings": 10 * 60,
+}
+BACKOFF_JITTER_RATIO = 0.15
 
 
 def _now_utc() -> datetime:
@@ -49,11 +63,65 @@ def _compute_success_next_poll(target_type: str, now: datetime) -> str:
     return _to_iso(now + timedelta(seconds=interval))
 
 
+def _apply_jitter(interval_seconds: int, jitter_ratio: float = BACKOFF_JITTER_RATIO) -> int:
+    if interval_seconds <= 0:
+        return 0
+    low = max(1, int(interval_seconds * (1.0 - jitter_ratio)))
+    high = max(low, int(interval_seconds * (1.0 + jitter_ratio)))
+    return random.randint(low, high)
+
+
 def _compute_error_next_poll(target_type: str, now: datetime, current_error_count: int) -> str:
     base = DEFAULT_ERROR_BASE_INTERVAL_SECONDS.get(target_type, 60)
+    cooldown = CIRCUIT_BREAKER_COOLDOWN_SECONDS.get(target_type, 10 * 60)
     # Simple exponential backoff capped at x32.
     multiplier = 2 ** min(max(current_error_count, 0), 5)
-    return _to_iso(now + timedelta(seconds=base * multiplier))
+    backoff = base * multiplier
+    if current_error_count >= CIRCUIT_BREAKER_ERROR_THRESHOLD:
+        backoff = max(backoff, cooldown)
+    return _to_iso(now + timedelta(seconds=_apply_jitter(backoff)))
+
+
+def _seconds_until(now: datetime, next_poll_at: str) -> int:
+    try:
+        next_value = datetime.fromisoformat(next_poll_at)
+    except ValueError:
+        return 0
+    delta = next_value - now
+    return max(0, int(delta.total_seconds()))
+
+
+def _due_age_seconds(now: datetime, next_poll_at: str) -> int:
+    try:
+        next_value = datetime.fromisoformat(next_poll_at)
+    except ValueError:
+        return 0
+    if now <= next_value:
+        return 0
+    return int((now - next_value).total_seconds())
+
+
+def _log_result(result: Dict) -> None:
+    logger.info("poller_result %s", json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
+def _summarize_tick(results: List[Dict], started: datetime, completed: datetime) -> Dict:
+    total = len(results)
+    ok = sum(1 for item in results if item.get("status") == "ok")
+    errors = sum(1 for item in results if item.get("status") == "error")
+    durations = [int(item.get("duration_ms", 0) or 0) for item in results]
+    stale = sum(1 for item in results if int(item.get("due_age_seconds", 0) or 0) > 0)
+    return {
+        "tick_started_at": _to_iso(started),
+        "tick_completed_at": _to_iso(completed),
+        "due_targets": total,
+        "ok_results": ok,
+        "error_results": errors,
+        "stale_targets": stale,
+        "success_ratio": (ok / total) if total else 1.0,
+        "avg_duration_ms": int(sum(durations) / total) if total else 0,
+        "max_duration_ms": max(durations) if durations else 0,
+    }
 
 
 def _extract_game_ids_from_schedule_entries(entries: List[object]) -> List[int]:
@@ -137,6 +205,7 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
 
 def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
     now_value = now or _now_utc()
+    tick_started = _now_utc()
     due_targets = list_due_poll_targets(cache_dir, _to_iso(now_value))
 
     results: List[Dict] = []
@@ -146,6 +215,10 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
         target_type = str(target["target_type"])
         target_key = str(target["target_key"])
         error_count = int(target.get("error_count", 0) or 0)
+        due_age_seconds = 0
+        next_poll_at_value = target.get("next_poll_at")
+        if next_poll_at_value:
+            due_age_seconds = _due_age_seconds(now_value, str(next_poll_at_value))
         started = perf_counter()
 
         try:
@@ -172,11 +245,14 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
                 "status": "ok",
                 "duration_ms": duration_ms,
                 "next_poll_at": next_poll_at,
+                "due_age_seconds": due_age_seconds,
             })
         except Exception as exc:
             duration_ms = int((perf_counter() - started) * 1000)
             next_poll_at = _compute_error_next_poll(target_type, now_value, error_count)
             new_error_count = update_poll_error(cache_dir, target_id, duration_ms, next_poll_at)
+            retry_in_seconds = _seconds_until(now_value, next_poll_at)
+            recovery_mode = "circuit_open" if new_error_count >= CIRCUIT_BREAKER_ERROR_THRESHOLD else "backoff"
             insert_domain_event(
                 cache_dir,
                 "poll_failed",
@@ -188,6 +264,8 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
                     "duration_ms": duration_ms,
                     "next_poll_at": next_poll_at,
                     "error_count": new_error_count,
+                    "retry_in_seconds": retry_in_seconds,
+                    "recovery_mode": recovery_mode,
                     "error": str(exc),
                 },
             )
@@ -199,8 +277,16 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
                 "duration_ms": duration_ms,
                 "next_poll_at": next_poll_at,
                 "error_count": new_error_count,
+                "retry_in_seconds": retry_in_seconds,
+                "recovery_mode": recovery_mode,
+                "due_age_seconds": due_age_seconds,
                 "error": str(exc),
             })
+
+        _log_result(results[-1])
+
+    tick_summary = _summarize_tick(results, tick_started, _now_utc())
+    logger.info("poller_tick_summary %s", json.dumps(tick_summary, ensure_ascii=False, sort_keys=True))
 
     return results
 
@@ -209,7 +295,7 @@ def run_poller_worker(
     cache_dir: Path,
     tick_interval_seconds: float = 5.0,
     max_ticks: int | None = None,
-) -> Dict[str, int]:
+) -> Dict[str, Any]:
     if tick_interval_seconds < 0:
         raise PollerError("tick_interval_seconds must be >= 0")
     if max_ticks is not None and max_ticks <= 0:
@@ -218,6 +304,10 @@ def run_poller_worker(
     ticks = 0
     ok_results = 0
     error_results = 0
+    stale_targets = 0
+    total_duration_ms = 0
+    max_duration_ms = 0
+    worker_started = _now_utc()
 
     while True:
         tick_results = run_poller_tick(cache_dir)
@@ -228,14 +318,27 @@ def run_poller_worker(
                 ok_results += 1
             elif result.get("status") == "error":
                 error_results += 1
+            duration_ms = int(result.get("duration_ms", 0) or 0)
+            total_duration_ms += duration_ms
+            max_duration_ms = max(max_duration_ms, duration_ms)
+            if int(result.get("due_age_seconds", 0) or 0) > 0:
+                stale_targets += 1
 
         if max_ticks is not None and ticks >= max_ticks:
             break
 
         _sleep(tick_interval_seconds)
 
-    return {
+    worker_summary = {
         "ticks": ticks,
         "ok_results": ok_results,
         "error_results": error_results,
+        "stale_targets": stale_targets,
+        "total_results": ok_results + error_results,
+        "avg_duration_ms": int(total_duration_ms / (ok_results + error_results)) if (ok_results + error_results) else 0,
+        "max_duration_ms": max_duration_ms,
+        "worker_started_at": _to_iso(worker_started),
+        "worker_completed_at": _to_iso(_now_utc()),
     }
+    logger.info("poller_worker_summary %s", json.dumps(worker_summary, ensure_ascii=False, sort_keys=True))
+    return worker_summary
