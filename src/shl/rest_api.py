@@ -15,6 +15,7 @@ from src.shl.schedule import (
     get_standings,
 )
 from src.shl.store import get_games_freshness, get_schedule_fetched_at
+from src.shl.store import get_game_fetched_at, load_game
 
 
 def _serialize(value: Any) -> Any:
@@ -94,6 +95,22 @@ def create_app(cache_dir: Path) -> FastAPI:
             "meta": {
                 "season_id": str(season_id),
                 "source_schedule_fetched_at": source_fetched_at,
+                **_meta(),
+            },
+        }
+
+    @app.get("/games/{game_id}")
+    def game_details(game_id: int) -> Dict[str, Any]:
+        game = load_game(cache_dir, game_id)
+        if game is None:
+            raise HTTPException(status_code=404, detail=f"No game stored for game_id {game_id}")
+
+        source_fetched_at = get_game_fetched_at(cache_dir, game_id)
+        return {
+            "data": _serialize(game),
+            "meta": {
+                "game_id": str(game_id),
+                "source_fetched_at": source_fetched_at,
                 **_meta(),
             },
         }

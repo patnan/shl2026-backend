@@ -139,6 +139,7 @@ python -m src.cli serve --host 127.0.0.1 --port 8000
 # 4) In another terminal, query persisted data
 curl "http://127.0.0.1:8000/seasons/18263/standings"
 curl "http://127.0.0.1:8000/seasons/18263/games?date=2025-09-16"
+curl "http://127.0.0.1:8000/games/1004308"
 ```
 
 ## Python API usage
