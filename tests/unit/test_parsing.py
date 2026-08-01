@@ -1,3 +1,4 @@
+import dataclasses
 import json
 
 import pytest
@@ -12,6 +13,7 @@ from src.shl.helpers.parsing import (
     parse_score_block,
     parse_top_stats,
 )
+from src.shl.models import GoalDetail, PenaltyTimeRange, Score
 
 
 def build_page_html(score_cell: str) -> str:
@@ -160,12 +162,12 @@ def test_parse_score_block_variants(
 ):
     score = parse_score_block(score_cell)
 
-    assert score["current"] == expected_current
-    assert score["home_score"] == expected_home_score
-    assert score["away_score"] == expected_away_score
-    assert score["periods"] == expected_periods
-    assert score["current_period"] == expected_current_period
-    assert score["state"] == expected_state
+    assert score.current == expected_current
+    assert score.home_score == expected_home_score
+    assert score.away_score == expected_away_score
+    assert score.periods == expected_periods
+    assert score.current_period == expected_current_period
+    assert score.state == expected_state
 
 
 @pytest.mark.parametrize(
@@ -207,11 +209,11 @@ def test_parse_players(player_text, expected_players, expected_numbers):
     [
         (
             "3-0 (PP1) ENG",
-          {"home_score": 3, "away_score": 0, "strength": "PP1", "qualifier": "ENG"},
+            GoalDetail(home_score=3, away_score=0, strength="PP1", qualifier="ENG"),
         ),
         (
             "2-0 (EQ)",
-          {"home_score": 2, "away_score": 0, "strength": "EQ", "qualifier": None},
+            GoalDetail(home_score=2, away_score=0, strength="EQ", qualifier=None),
         ),
         ("2 min", None),
         ("GK Out", None),
@@ -233,37 +235,45 @@ def test_parse_top_stats_game_flags(score_cell, expected_is_overtime, expected_i
     html = build_page_html(score_cell)
     data = parse_top_stats(html)
 
-    assert data["game"]["is_overtime"] == expected_is_overtime
-    assert data["game"]["is_shootout"] == expected_is_shootout
+    assert data.game.is_overtime == expected_is_overtime
+    assert data.game.is_shootout == expected_is_shootout
 
 
 def test_parse_top_stats_extracts_combined_team_stats():
     html = build_page_html("3 - 0 (0-0, 1-0, 2-0) Final Score Spectators: 5860")
     data = parse_top_stats(html)
 
-    assert data["game"]["home_team"] == "HV 71"
-    assert data["game"]["away_team"] == "Växjö Lakers HC"
-    assert data["score"] == {
-      "current": "3-0",
-      "home_score": 3,
-      "away_score": 0,
-        "periods": ["0-0", "1-0", "2-0"],
-      "current_period": 3,
-        "state": "Final Score",
-    }
+    assert data.game.home_team == "HV 71"
+    assert data.game.away_team == "Växjö Lakers HC"
+    assert data.score == Score(
+        current="3-0", home_score=3, away_score=0,
+        periods=["0-0", "1-0", "2-0"], current_period=3, state="Final Score",
+    )
 
-    home = data["teams"]["HV 71"]
-    away = data["teams"]["Växjö Lakers HC"]
+    home = data.teams["HV 71"]
+    away = data.teams["Växjö Lakers HC"]
 
-    assert home["shots"] == {"total": 24, "by_period": [13, 3, 8], "percentage": "12,50%"}
-    assert home["saves"] == {"total": 23, "by_period": [4, 12, 7], "percentage": "100,00%"}
-    assert home["pim"] == {"total": 4, "by_period": [0, 4, 0]}
-    assert home["pp"] == {"percentage": "33,33%", "time": "04:09"}
+    assert home.shots.total == 24
+    assert home.shots.by_period == [13, 3, 8]
+    assert home.shots.percentage == "12,50%"
+    assert home.saves.total == 23
+    assert home.saves.by_period == [4, 12, 7]
+    assert home.saves.percentage == "100,00%"
+    assert home.pim.total == 4
+    assert home.pim.by_period == [0, 4, 0]
+    assert home.pp.percentage == "33,33%"
+    assert home.pp.time == "04:09"
 
-    assert away["shots"] == {"total": 23, "by_period": [4, 12, 7], "percentage": "0,00%"}
-    assert away["saves"] == {"total": 21, "by_period": [13, 2, 6], "percentage": "87,50%"}
-    assert away["pim"] == {"total": 6, "by_period": [2, 2, 2]}
-    assert away["pp"] == {"percentage": "0,00%", "time": "03:04"}
+    assert away.shots.total == 23
+    assert away.shots.by_period == [4, 12, 7]
+    assert away.shots.percentage == "0,00%"
+    assert away.saves.total == 21
+    assert away.saves.by_period == [13, 2, 6]
+    assert away.saves.percentage == "87,50%"
+    assert away.pim.total == 6
+    assert away.pim.by_period == [2, 2, 2]
+    assert away.pp.percentage == "0,00%"
+    assert away.pp.time == "03:04"
 
 
 def test_parse_actions_extracts_event_lines_as_json_objects():
@@ -273,68 +283,64 @@ def test_parse_actions_extracts_event_lines_as_json_objects():
     assert len(actions) == 3
 
     first = actions[0]
-    assert first["period"] == "3rd period"
-    assert first["game_time"] == "59:35"
-    assert first["event_type"] == "goal"
-    assert first["event_detail"] == "3-0 (PP1) ENG"
-    assert first["team_abbrev"] == "HV71"
-    assert first["players"] == [
-        "28. Kloos, Justin Glenn (9)",
-        "27. Ang, Jonathan",
-        "70. Rousek, Lukas",
-    ]
-    assert first["player_numbers"] == [28, 27, 70]
-    assert first["is_goal"] is True
-    assert first["goal"] == {
-      "home_score": 3,
-      "away_score": 0,
-      "strength": "PP1",
-      "qualifier": "ENG",
-    }
+    assert first.period == "3rd period"
+    assert first.game_time == "59:35"
+    assert first.event_type == "goal"
+    assert first.event_detail == "3-0 (PP1) ENG"
+    assert first.team_abbrev == "HV71"
+    assert first.players == ["28. Kloos, Justin Glenn (9)", "27. Ang, Jonathan", "70. Rousek, Lukas"]
+    assert first.player_numbers == [28, 27, 70]
+    assert first.is_goal is True
+    assert first.goal == GoalDetail(home_score=3, away_score=0, strength="PP1", qualifier="ENG")
 
     second = actions[1]
-    assert second["period"] == "3rd period"
-    assert second["event_type"] == "penalty"
-    assert second["event_detail"] == "2 min"
-    assert second["team_abbrev"] == "VÄX"
-    assert second["player_text"] == "49. Sahlin Wallenius, Leo"
-    assert second["players"] == ["49. Sahlin Wallenius, Leo"]
-    assert second["player_numbers"] == [49]
-    assert second["penalty_reason"] == "Crosschecking"
-    assert second["penalty_time_range"] == {"start": "58:30", "end": "59:35"}
-    assert second["is_goal"] is False
-    assert "goal" not in second
+    assert second.period == "3rd period"
+    assert second.event_type == "penalty"
+    assert second.event_detail == "2 min"
+    assert second.team_abbrev == "VÄX"
+    assert second.player_text == "49. Sahlin Wallenius, Leo"
+    assert second.players == ["49. Sahlin Wallenius, Leo"]
+    assert second.player_numbers == [49]
+    assert second.penalty_reason == "Crosschecking"
+    assert second.penalty_time_range == PenaltyTimeRange(start="58:30", end="59:35")
+    assert second.is_goal is False
+    assert second.goal is None
 
     third = actions[2]
-    assert third["period"] == "2nd period"
-    assert third["team_abbrev"] == "VÄX"
-    assert third["player_text"] == "Team penalty"
-    assert third["players"] == []
-    assert third["player_numbers"] == []
-    assert third["penalty_reason"] == "Too many players on the ice"
-    assert third["penalty_time_range"] == {"start": "27:52", "end": "29:52"}
+    assert third.period == "2nd period"
+    assert third.team_abbrev == "VÄX"
+    assert third.player_text == "Team penalty"
+    assert third.players == []
+    assert third.player_numbers == []
+    assert third.penalty_reason == "Too many players on the ice"
+    assert third.penalty_time_range == PenaltyTimeRange(start="27:52", end="29:52")
 
 
 def test_combined_output_shape_has_expected_keys():
     html = build_page_html("3 - 0 (0-0, 1-0, 2-0) Final Score Spectators: 5860")
-    top = parse_top_stats(html)
-    top["actions"] = parse_actions(html)
+    game = parse_top_stats(html)
+    actions = parse_actions(html)
 
-    payload = json.loads(json.dumps(top, ensure_ascii=False))
+    payload = json.loads(json.dumps(dataclasses.asdict(game), ensure_ascii=False))
     assert set(payload.keys()) == {"game", "score", "teams", "actions"}
     assert isinstance(payload["actions"], list)
-    assert payload["actions"][0]["game_time"] == "59:35"
-    assert payload["actions"][0]["event_type"] == "goal"
+
+    payload_with_actions = json.loads(json.dumps(
+        dataclasses.asdict(game.__class__(game=game.game, score=game.score, teams=game.teams, actions=actions)),
+        ensure_ascii=False,
+    ))
+    assert payload_with_actions["actions"][0]["game_time"] == "59:35"
+    assert payload_with_actions["actions"][0]["event_type"] == "goal"
 
 
 def test_parse_score_block_without_final_score_label_sets_state_none():
     score = parse_score_block("1 - 0 (1-0, 0-0, 0-0) Spectators: 1000")
-    assert score["current"] == "1-0"
-    assert score["home_score"] == 1
-    assert score["away_score"] == 0
-    assert score["periods"] == ["1-0", "0-0", "0-0"]
-    assert score["current_period"] == 3
-    assert score["state"] is None
+    assert score.current == "1-0"
+    assert score.home_score == 1
+    assert score.away_score == 0
+    assert score.periods == ["1-0", "0-0", "0-0"]
+    assert score.current_period == 3
+    assert score.state is None
 
 
 def test_parse_score_block_invalid_raises_value_error():
@@ -356,7 +362,7 @@ def test_parse_players_multiple_entries_without_pos_part():
 
 def test_parse_goal_event_type_with_extra_spaces():
     goal = parse_goal_event_type("  4 - 3   (  OT )   GWG  ")
-    assert goal == {"home_score": 4, "away_score": 3, "strength": "OT", "qualifier": "GWG"}
+    assert goal == GoalDetail(home_score=4, away_score=3, strength="OT", qualifier="GWG")
 
 
 def test_parse_actions_returns_empty_when_actions_table_missing():
@@ -377,9 +383,9 @@ def test_parse_actions_ignores_rows_without_valid_game_time():
 """
     actions = parse_actions(html)
     assert len(actions) == 1
-    assert actions[0]["game_time"] == "12:34"
-    assert actions[0]["event_type"] == "penalty"
-    assert actions[0]["event_detail"] == "2 min"
+    assert actions[0].game_time == "12:34"
+    assert actions[0].event_type == "penalty"
+    assert actions[0].event_detail == "2 min"
 
 
 def test_parse_actions_preserves_none_period_when_no_period_header_match():
@@ -394,8 +400,8 @@ def test_parse_actions_preserves_none_period_when_no_period_header_match():
 """
     actions = parse_actions(html)
     assert len(actions) == 1
-    assert actions[0]["period"] == "period 4"
-    assert actions[0]["event_type"] == "PS"
+    assert actions[0].period == "period 4"
+    assert actions[0].event_type == "PS"
 
 
 def test_parse_top_stats_raises_when_top_table_missing():
@@ -413,9 +419,9 @@ def test_parse_top_stats_raises_on_invalid_shots_row_structure():
 def test_parse_top_stats_handles_five_period_shootout_format():
     html = build_page_html("4 - 3 (2-1, 1-1, 0-1, 0-0, 1-0) Final Score Spectators: 5860")
     data = parse_top_stats(html)
-    assert data["score"]["periods"] == ["2-1", "1-1", "0-1", "0-0", "1-0"]
-    assert data["game"]["is_overtime"] is True
-    assert data["game"]["is_shootout"] is True
+    assert data.score.periods == ["2-1", "1-1", "0-1", "0-0", "1-0"]
+    assert data.game.is_overtime is True
+    assert data.game.is_shootout is True
 
 
 def test_parse_actions_infers_period_4_for_overtime_without_header():
@@ -430,8 +436,8 @@ def test_parse_actions_infers_period_4_for_overtime_without_header():
 </body></html>
 """
     actions = parse_actions(html, score_period_count=4)
-    assert actions[0]["period"] == "3rd period"
-    assert actions[1]["period"] == "period 4"
+    assert actions[0].period == "3rd period"
+    assert actions[1].period == "period 4"
 
 
 def test_parse_actions_infers_period_5_for_shootout_without_header():
@@ -446,9 +452,9 @@ def test_parse_actions_infers_period_5_for_shootout_without_header():
 </body></html>
 """
     actions = parse_actions(html, score_period_count=5)
-    assert actions[0]["period"] == "period 4"
-    assert actions[0]["is_goal"] is True
-    assert actions[1]["period"] == "period 5"
+    assert actions[0].period == "period 4"
+    assert actions[0].is_goal is True
+    assert actions[1].period == "period 5"
 
 
 def test_parse_actions_marks_ps_as_missed_when_text_contains_missed_penalty_shot():
@@ -466,9 +472,9 @@ def test_parse_actions_marks_ps_as_missed_when_text_contains_missed_penalty_shot
 
     actions = parse_actions(html, score_period_count=5)
     assert len(actions) == 1
-    assert actions[0]["event_type"] == "PS"
-    assert actions[0]["player_text"] == "33. Silfverberg, Jakob Missed Penalty Shot Saved By 1. Enroth, Jhonas"
-    assert actions[0]["is_goal"] is False
+    assert actions[0].event_type == "PS"
+    assert actions[0].player_text == "33. Silfverberg, Jakob Missed Penalty Shot Saved By 1. Enroth, Jhonas"
+    assert actions[0].is_goal is False
 
 
 def test_parse_actions_parses_game_winning_shots_subsection():
@@ -485,39 +491,32 @@ def test_parse_actions_parses_game_winning_shots_subsection():
 
   actions = parse_actions(html, score_period_count=5)
   assert len(actions) == 2
-  assert actions[0]["period"] == "period 5"
-  assert actions[0]["event_type"] == "GWS"
-  assert actions[0]["is_goal"] is True
-  assert actions[0]["shot_outcome"] == "scored"
-  assert actions[0]["goal"] == {
-    "home_score": 1,
-    "away_score": 0,
-    "strength": "GWS",
-    "qualifier": "scored",
-  }
-  assert actions[0]["players"] == ["52. Kopacka, Jack vs. goalie", "1. Enroth, Jhonas"]
+  assert actions[0].period == "period 5"
+  assert actions[0].event_type == "GWS"
+  assert actions[0].is_goal is True
+  assert actions[0].shot_outcome == "scored"
+  assert actions[0].goal == GoalDetail(home_score=1, away_score=0, strength="GWS", qualifier="scored")
+  assert actions[0].players == ["52. Kopacka, Jack vs. goalie", "1. Enroth, Jhonas"]
 
-  assert actions[1]["period"] == "period 5"
-  assert actions[1]["event_type"] == "GWS"
-  assert actions[1]["is_goal"] is False
-  assert actions[1]["shot_outcome"] == "missed"
+  assert actions[1].period == "period 5"
+  assert actions[1].event_type == "GWS"
+  assert actions[1].is_goal is False
+  assert actions[1].shot_outcome == "missed"
 
 
 def test_extract_penalty_metadata_for_player_penalty():
   meta = extract_penalty_metadata("27. Ang, Jonathan Slashing (54:38 - 56:38)")
-  assert meta["clean_player_text"] == "27. Ang, Jonathan"
-  assert meta["players"] == ["27. Ang, Jonathan"]
-  assert meta["player_numbers"] == [27]
-  assert meta["reason"] == "Slashing"
-  assert meta["time_range"] == {"start": "54:38", "end": "56:38"}
+  assert meta.clean_player_text == "27. Ang, Jonathan"
+  assert meta.players == ["27. Ang, Jonathan"]
+  assert meta.player_numbers == [27]
+  assert meta.reason == "Slashing"
+  assert meta.time_range == PenaltyTimeRange(start="54:38", end="56:38")
 
 
 def test_extract_penalty_metadata_for_team_penalty():
   meta = extract_penalty_metadata("Team penalty Too many players on the ice (27:52 - 29:52)")
-  assert meta["clean_player_text"] == "Team penalty"
-  assert meta["players"] == []
-  assert meta["player_numbers"] == []
-  assert meta["reason"] == "Too many players on the ice"
-  assert meta["time_range"] == {"start": "27:52", "end": "29:52"}
-
-
+  assert meta.clean_player_text == "Team penalty"
+  assert meta.players == []
+  assert meta.player_numbers == []
+  assert meta.reason == "Too many players on the ice"
+  assert meta.time_range == PenaltyTimeRange(start="27:52", end="29:52")

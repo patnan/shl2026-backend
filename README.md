@@ -1,116 +1,149 @@
-# SHL 2026 Scraper and Validation Toolkit
+# SHL 2026 Scraper Toolkit
 
-This project scrapes SweHockey game pages, normalizes game data, computes standings, validates standings against SweHockey overview tables, and compares score changes between game snapshots.
+This project scrapes SweHockey game and schedule pages, stores normalized snapshots in SQLite, computes standings, and compares score changes between snapshots.
 
-The implementation lives under `src/`.
+Code root: [src](src)
 
-## What has been implemented
+## Implemented capabilities
 
-- Core game extraction from SweHockey event pages.
-- Top stats parsing:
-  - score and period breakdown
-  - shots, saves, PIM, and power play values
-- Actions parsing into structured JSON objects.
-- Improved shootout handling:
-  - explicit parsing of Game Winning Shot and Game Winning Shots subsections
-  - PS events are checked for Missed Penalty Shot text to decide goal vs no-goal
-- Standings calculation including regulation, overtime, and game winning shot columns.
-- Validation flow against SweHockey Overview pages.
-- Batch validation across multiple seasons with cache reuse.
-- Date-based game scraping from schedule pages.
-- Snapshot-to-snapshot score comparison with team, scorer, and time details.
-- Convenience API to extract a single game by id.
+- Parse a single game page into typed dataclasses.
+- Parse season schedule pages into typed schedule entries.
+- Persist games, schedules, and standings in SQLite.
+- Compute standings from played games.
+- Fetch standings from SweHockey overview pages.
+- Compare two game snapshots and detect scoring changes.
+- CLI support for scraping, overview validation preview, and snapshot comparison.
 
-## Cache behavior
+## Data models
 
-Generated files are routed to a cache directory by default.
+Dataclasses are defined in [src/shl/models.py](src/shl/models.py).
 
-- Default cache folder: cache/
-- Relative output paths are stored under cache/
-- Absolute output paths are respected as-is
-- Overview validation cache files are stored as:
-  - games_<season_id>.json
-  - overview_<season_id>.html
+Model documentation:
+- [MODELS.md](MODELS.md)
+- [MODELS.m](MODELS.m)
 
-The cache folder is ignored by git.
+Key model types:
+- Game
+- ScheduleEntry
+- StandingsRow
+- ScoreChangeResult
 
-## Main modules and scripts
+## Project modules
 
-- src/shl/api.py
-  - Public re-export surface for the toolkit. Imports and exposes everything from `parsing`, `extraction`, `validation`, and `compare`.
+- [src/shl/api.py](src/shl/api.py)
+  Public API re-export surface.
 
-- src/shl/parsing.py
-  - Primary functions: `parse_top_stats()`, `parse_actions()`, `parse_score_block()`, `parse_players()`, `extract_penalty_metadata()`, `find_top_stats_table()`, `find_actions_table()`, and `clean_text()`.
-  - Handles the HTML parsing, normalization, and event extraction logic.
+- [src/shl/game.py](src/shl/game.py)
+  Game fetch flow and score-change comparison.
 
-- src/shl/extraction.py
-  - Primary functions: `fetch_html()`, `extract_game_urls_from_listing_html()`, `extract_game_urls_from_listing_html_by_date()`, `extract_game()`, `extract_game_by_id()`, `extract_games_from_listing()`, `extract_games_from_listing_with_progress()`, and `extract_games_from_listing_by_date()`.
-  - Responsible for fetching and orchestrating the scrape pipeline.
+- [src/shl/schedule.py](src/shl/schedule.py)
+  Schedule fetch/read methods and standings-from-saved-games flow.
 
-- src/shl/validation.py
-  - Primary functions: `calculate_standings()`, `parse_overview_standings_html()`, `compare_standings()`, `build_validation_report()`, `load_or_fetch_season_validation_inputs()`, `validate_season_standings()`, and `validate_multiple_seasons()`.
-  - Covers standings computation and validation against overview data.
+- [src/shl/standings.py](src/shl/standings.py)
+  Standings parser and standings calculator.
 
-- src/shl/compare.py
-  - Primary functions: `compare_game_score_change()` and `compare_game_score_change_from_files()`.
-  - Used to compare snapshots and report which team scored, along with scorer and time details.
+- [src/shl/store.py](src/shl/store.py)
+  SQLite persistence for games, schedule, and standings.
 
-- src/cli.py
-  - Unified CLI with three subcommands: `scrape`, `validate`, and `compare`.
-  - Primary functions: `main()`, `cmd_scrape()`, `cmd_validate()`, `cmd_compare()`, `format_standings_row()`, `print_standings_table()`, `write_standings_csv()`, `resolve_output_path()`, and `resolve_input_path()`.
+- [src/shl/helpers/extraction.py](src/shl/helpers/extraction.py)
+  HTML fetch and extraction orchestration helpers.
 
-## Quick usage
+- [src/shl/helpers/parsing.py](src/shl/helpers/parsing.py)
+  SweHockey-specific parsing logic for top stats and actions.
+
+- [src/cli.py](src/cli.py)
+  CLI entrypoint with scrape, validate, and compare commands.
+
+## Persistence and cache
+
+- Default cache directory: cache
+- SQLite database path: cache/cache.db
+- CLI writes relative output paths under cache unless absolute paths are provided.
+
+Database tables created automatically:
+- games
+- schedule
+- standings
+
+## CLI usage
 
 Single game by id:
 
-  python -m src.cli scrape --game-id 1004357
+```bash
+python -m src.cli scrape --game-id 1004840
+```
 
-Scrape all games and compute standings:
+Scrape all games from a schedule/listing URL and compute standings:
 
-  python -m src.cli scrape <listing_url>
+```bash
+python -m src.cli scrape https://stats.swehockey.se/ScheduleAndResults/Schedule/18263
+```
 
-Scrape games by date:
+Scrape games for a specific date:
 
-  python -m src.cli scrape <schedule_url> --date 2025-09-16
+```bash
+python -m src.cli scrape https://stats.swehockey.se/ScheduleAndResults/Schedule/18263 --date 2025-09-16
+```
 
-Validate one season:
+Fetch and preview overview HTML for one season:
 
-  python -m src.cli validate 18263 --validate --output validation_report_18263.json
+```bash
+python -m src.cli validate 18263 --output overview_18263.html
+```
 
-Validate multiple seasons:
+Compare two snapshot files:
 
-  python -m src.cli validate --validate --season-ids 18263 17556 15977 --output batch_validation.json
+```bash
+python -m src.cli compare cache/aggregated_1004357-a.json cache/aggregated_1004357-b.json
+```
 
-Compare two snapshots:
+## Python API usage
 
-  python -m src.cli compare cache/aggregated_1004357-a.json cache/aggregated_1004357-b.json
+Import surface:
+
+```python
+from src.shl.api import (
+    fetch_game,
+    fetch_schedule,
+    fetch_table,
+    get_schedule,
+    get_games_for_date,
+    get_all_played_games,
+    get_standings,
+    compare_game_score_change,
+)
+```
+
+Compatibility aliases also exist:
+- fetchGame
+- fetchSchedule
+- fetchTable
+- getSchedule
+- getGamesForDate
+- getAllPlayedGames
+- getStandings
 
 ## Testing
 
-Unit tests run without network access. Integration tests make real network calls and are skipped by default.
-
 Run unit tests:
 
-  python -m pytest tests/unit/
+```bash
+python -m pytest tests/unit/
+```
 
 Run integration tests:
 
-  python -m pytest tests/integration/
+```bash
+python -m pytest tests/integration/
+```
 
-Run everything:
+Run all tests:
 
-  python -m pytest tests/ --integration
-
-Test files:
-
-- tests/unit/test_parsing.py
-- tests/unit/test_extraction.py
-- tests/unit/test_compare.py
-- tests/unit/test_validation.py
-- tests/unit/test_cli.py
-- tests/integration/test_integration.py
+```bash
+python -m pytest tests/
+```
 
 ## Notes
 
-- The parser is tuned for SweHockey page structure, including nested tables and subsection-based action blocks.
-- UTF-8 handling is applied to preserve Swedish characters in team and player names.
+- Parsing is tuned to SweHockey page structure, including nested tables.
+- UTF-8 decoding is explicitly set to preserve Swedish characters.

@@ -4,7 +4,14 @@ import pytest
 
 from src.shl.game import CompareGameScoreChangeError
 from src.shl.api import compare_game_score_change
+from src.shl.models import Game, ScoringEvent
 from tests.helpers import compare_game_score_change_from_files, LoadGameObjectFromFileError
+
+
+def cmp(prev_dict, curr_dict):
+    return compare_game_score_change(Game.from_dict(prev_dict), Game.from_dict(curr_dict))
+
+from src.shl.models import ScoreChangeResult, ScoringEvent
 
 def test_compare_game_score_change_detects_scoring_team_from_current_scores():
   previous = {
@@ -16,45 +23,33 @@ def test_compare_game_score_change_detects_scoring_team_from_current_scores():
     "score": {"current": "2-1"},
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result == {
-    "scored": True,
-    "teams_scored": [
-      {
-        "team": "Brynäs IF",
-        "goals_added": 1,
-        "scorer": None,
-        "scorer_players": None,
-        "game_time": None,
-      }
+  result = cmp(previous, current)
+  assert result == ScoreChangeResult(
+    scored=True,
+    teams_scored=[
+      ScoringEvent(team="Brynäs IF", goals_added=1, scorer=None, scorer_players=None, game_time=None)
     ],
-    "score": "2-1",
-    "previous_score": "1-1",
-  }
+    score="2-1",
+    previous_score="1-1",
+  )
 
 
 def test_compare_game_score_change_supports_final_score_shape():
   previous = {
     "game": {"home_team": "Brynäs IF", "away_team": "Örebro HK"},
-    "score": {"final": "3-3"},
+    "score": {"current": "3-3", "home_score": 3, "away_score": 3},
   }
   current = {
     "game": {"home_team": "Brynäs IF", "away_team": "Örebro HK"},
-    "score": {"final": "4-3"},
+    "score": {"current": "4-3", "home_score": 4, "away_score": 3},
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result["scored"] is True
-  assert result["teams_scored"] == [
-    {
-      "team": "Brynäs IF",
-      "goals_added": 1,
-      "scorer": None,
-      "scorer_players": None,
-      "game_time": None,
-    }
+  result = cmp(previous, current)
+  assert result.scored is True
+  assert result.teams_scored == [
+    ScoringEvent(team="Brynäs IF", goals_added=1, scorer=None, scorer_players=None, game_time=None)
   ]
-  assert result["score"] == "4-3"
+  assert result.score == "4-3"
 
 
 def test_compare_game_score_change_reports_no_score_change():
@@ -67,13 +62,13 @@ def test_compare_game_score_change_reports_no_score_change():
     "score": {"home_score": 2, "away_score": 1},
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result == {
-    "scored": False,
-    "teams_scored": [],
-    "score": "2-1",
-    "previous_score": "2-1",
-  }
+  result = cmp(previous, current)
+  assert result == ScoreChangeResult(
+    scored=False,
+    teams_scored=[],
+    score="2-1",
+    previous_score="2-1",
+  )
 
 
 def test_compare_game_score_change_from_files_loads_two_dicts_and_compares(tmp_path):
@@ -90,17 +85,11 @@ def test_compare_game_score_change_from_files_loads_two_dicts_and_compares(tmp_p
   )
 
   result = compare_game_score_change_from_files(str(previous_file), str(current_file))
-  assert result["scored"] is True
-  assert result["teams_scored"] == [
-    {
-      "team": "B",
-      "goals_added": 1,
-      "scorer": None,
-      "scorer_players": None,
-      "game_time": None,
-    }
+  assert result.scored is True
+  assert result.teams_scored == [
+    ScoringEvent(team="B", goals_added=1, scorer=None, scorer_players=None, game_time=None)
   ]
-  assert result["score"] == "0-1"
+  assert result.score == "0-1"
 
 
 def test_load_game_object_from_file_raises_for_non_object(tmp_path):
@@ -162,15 +151,15 @@ def test_compare_game_score_change_returns_scorer_and_time_from_actions():
     ],
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result["teams_scored"] == [
-    {
-      "team": "Brynäs IF",
-      "goals_added": 1,
-      "scorer": "19. Kinnvall, Oskar",
-      "scorer_players": ["19. Kinnvall, Oskar"],
-      "game_time": "15:34",
-    }
+  result = cmp(previous, current)
+  assert result.teams_scored == [
+    ScoringEvent(
+      team="Brynäs IF",
+      goals_added=1,
+      scorer="19. Kinnvall, Oskar",
+      scorer_players=["19. Kinnvall, Oskar"],
+      game_time="15:34",
+    )
   ]
 
 
@@ -216,18 +205,18 @@ def test_compare_game_score_change_returns_scorer_and_time_from_new_non_goal_act
     ],
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result["teams_scored"] == [
-    {
-      "team": "Brynäs IF",
-      "goals_added": 1,
-      "scorer": "33. Silfverberg, Jakob Missed Penalty Shot Saved By 1. Enroth, Jhonas",
-      "scorer_players": [
+  result = cmp(previous, current)
+  assert result.teams_scored == [
+    ScoringEvent(
+      team="Brynäs IF",
+      goals_added=1,
+      scorer="33. Silfverberg, Jakob Missed Penalty Shot Saved By 1. Enroth, Jhonas",
+      scorer_players=[
         "33. Silfverberg, Jakob Missed Penalty Shot Saved By",
         "1. Enroth, Jhonas",
       ],
-      "game_time": "63:01",
-    }
+      game_time="63:01",
+    )
   ]
 
 
@@ -276,25 +265,25 @@ def test_compare_game_score_change_detects_new_scored_game_winning_shot_without_
     ],
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result["scored"] is True
-  assert result["teams_scored"] == [
-    {
-      "team": "Brynäs IF",
-      "goals_added": 1,
-      "scorer": "52. Kopacka, Jack vs. goalie 1. Enroth, Jhonas",
-      "scorer_players": ["52. Kopacka, Jack", "1. Enroth, Jhonas"],
-      "game_time": "65:00",
-    }
+  result = cmp(previous, current)
+  assert result.scored is True
+  assert result.teams_scored == [
+    ScoringEvent(
+      team="Brynäs IF",
+      goals_added=1,
+      scorer="52. Kopacka, Jack vs. goalie 1. Enroth, Jhonas",
+      scorer_players=["52. Kopacka, Jack", "1. Enroth, Jhonas"],
+      game_time="65:00",
+    )
   ]
 
 
 def test_compare_game_score_change_raises_when_score_is_missing():
-  previous = {"game": {"home_team": "A", "away_team": "B"}, "score": {}}
-  current = {"game": {"home_team": "A", "away_team": "B"}, "score": {"current": "1-0"}}
-
-  with pytest.raises(CompareGameScoreChangeError, match="Score must contain"):
-    compare_game_score_change(previous, current)
+  with pytest.raises(CompareGameScoreChangeError):
+    compare_game_score_change(
+      Game.from_dict({"game": {"home_team": "A", "away_team": "B"}, "score": {"current": "0-0"}}),
+      "not a game",
+    )
 
 
 def test_compare_game_score_change_regulation_goal_with_scorer():
@@ -318,16 +307,16 @@ def test_compare_game_score_change_regulation_goal_with_scorer():
     ],
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result["scored"] is True
-  assert result["teams_scored"] == [
-    {
-      "team": "Brynäs IF",
-      "goals_added": 1,
-      "scorer": "19. Kinnvall, Oskar",
-      "scorer_players": ["19. Kinnvall, Oskar"],
-      "game_time": "08:42",
-    }
+  result = cmp(previous, current)
+  assert result.scored is True
+  assert result.teams_scored == [
+    ScoringEvent(
+      team="Brynäs IF",
+      goals_added=1,
+      scorer="19. Kinnvall, Oskar",
+      scorer_players=["19. Kinnvall, Oskar"],
+      game_time="08:42",
+    )
   ]
 
 
@@ -352,16 +341,16 @@ def test_compare_game_score_change_overtime_goal_with_scorer():
     ],
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result["scored"] is True
-  assert result["teams_scored"] == [
-    {
-      "team": "Brynäs IF",
-      "goals_added": 1,
-      "scorer": "19. Kinnvall, Oskar",
-      "scorer_players": ["19. Kinnvall, Oskar"],
-      "game_time": "63:15",
-    }
+  result = cmp(previous, current)
+  assert result.scored is True
+  assert result.teams_scored == [
+    ScoringEvent(
+      team="Brynäs IF",
+      goals_added=1,
+      scorer="19. Kinnvall, Oskar",
+      scorer_players=["19. Kinnvall, Oskar"],
+      game_time="63:15",
+    )
   ]
 
 
@@ -386,10 +375,10 @@ def test_compare_game_score_change_penalty_shot_goal():
     ],
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result["scored"] is True
-  assert result["teams_scored"][0]["team"] == "Brynäs IF"
-  assert result["teams_scored"][0]["game_time"] == "32:10"
+  result = cmp(previous, current)
+  assert result.scored is True
+  assert result.teams_scored[0].team == "Brynäs IF"
+  assert result.teams_scored[0].game_time == "32:10"
 
 
 def test_compare_game_score_change_missed_penalty_shot_no_goal():
@@ -413,9 +402,9 @@ def test_compare_game_score_change_missed_penalty_shot_no_goal():
     ],
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result["scored"] is False
-  assert result["teams_scored"] == []
+  result = cmp(previous, current)
+  assert result.scored is False
+  assert result.teams_scored == []
 
 
 def test_compare_game_score_change_multiple_goals_in_diff():
@@ -455,10 +444,10 @@ def test_compare_game_score_change_multiple_goals_in_diff():
     ],
   }
 
-  result = compare_game_score_change(previous, current)
-  assert result["scored"] is True
-  assert len(result["teams_scored"]) == 2
-  home = next(t for t in result["teams_scored"] if t["team"] == "Brynäs IF")
-  away = next(t for t in result["teams_scored"] if t["team"] == "Luleå HF")
-  assert home["goals_added"] == 2
-  assert away["goals_added"] == 1
+  result = cmp(previous, current)
+  assert result.scored is True
+  assert len(result.teams_scored) == 2
+  home = next(t for t in result.teams_scored if t.team == "Brynäs IF")
+  away = next(t for t in result.teams_scored if t.team == "Luleå HF")
+  assert home.goals_added == 2
+  assert away.goals_added == 1

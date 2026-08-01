@@ -11,6 +11,7 @@ from src.shl.api import (
     extract_games_from_listing_by_date,
     extract_games_from_listing_with_progress,
 )
+from src.shl.models import Game
 from src.shl.helpers.extraction import fetch_html
 
 
@@ -163,17 +164,17 @@ def cmd_validate(args: argparse.Namespace, cache_dir: Path) -> None:
 
 
 def cmd_compare(args: argparse.Namespace, cache_dir: Path) -> None:
-    previous_game = json.loads(Path(args.previous_file).read_text(encoding="utf-8"))
-    current_game = json.loads(Path(args.current_file).read_text(encoding="utf-8"))
+    previous_game = Game.from_dict(json.loads(Path(args.previous_file).read_text(encoding="utf-8")))
+    current_game = Game.from_dict(json.loads(Path(args.current_file).read_text(encoding="utf-8")))
     result = compare_game_score_change(previous_game, current_game)
 
     if args.output:
         out = resolve_output_path(cache_dir, args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+        out.write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"Saved comparison JSON to: {out}")
 
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
 
 
 def main() -> None:

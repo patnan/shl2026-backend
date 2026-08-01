@@ -1,99 +1,156 @@
+import os
+from pathlib import Path
+
 import pytest
 
 from src.shl.api import (
-    calculate_standings,
-    extract_game_by_id,
-    extract_games_from_listing_by_date,
-    extract_games_from_listing_with_progress,
+    fetch_game,
+    fetch_schedule,
+    fetch_table,
+    get_all_played_games,
+    get_games_for_date,
+    get_schedule,
+    get_standings,
 )
 from src.shl.helpers.extraction import fetch_html
+from src.shl.store import load_game, load_standings
 from tests.helpers import compare_standings, parse_overview_standings_html
 
 
-SEASON_SCHEDULE_URL = "https://stats.swehockey.se/ScheduleAndResults/Schedule/18263"
+SEASON_ID = 18263
+
+SEASON_SCHEDULE_URL = f"https://stats.swehockey.se/ScheduleAndResults/Schedule/{SEASON_ID}"
+
+SEASON_OVERVIEW_URL = f"https://stats.swehockey.se/ScheduleAndResults/Overview/{SEASON_ID}"
 
 GAME_ID = 1004357
 
 ROUND_DATE = "2025-09-16"
 
 
-def _make_progress_printer(test_name: str):
-    def on_progress(index, total, url):
-        print(f"\r{test_name}: [{index}/{total}] {url}", end="", flush=True)
+@pytest.fixture(autouse=True)
+def _print_integration_test_name(request):
+    print(f"\n=== {request.node.name} ===")
 
-    return on_progress
+
+@pytest.fixture(scope="module")
+def integration_db_dir():
+    configured = os.environ.get("SHL_INTEGRATION_DB_DIR")
+    if configured:
+        db_dir = Path(configured)
+    else:
+        db_dir = Path("cache") / "integration_db"
+
+    db_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\nintegration_db_dir: {db_dir}")
+    return db_dir
+
+
+@pytest.fixture(scope="module")
+def persisted_schedule(integration_db_dir):
+    # This fixture is intentionally the first persistence step for schedule data.
+    return fetch_schedule(SEASON_ID, integration_db_dir)
+
+
+@pytest.fixture(scope="module")
+def persisted_played_games(persisted_schedule, integration_db_dir):
+    played_entries = get_all_played_games(SEASON_ID, integration_db_dir)
+    game_ids = []
+    total = len(played_entries)
+    print(f"\npersisted_played_games: ensuring {total} played games exist in DB")
+    for index, entry in enumerate(played_entries, start=1):
+        game_id = int(entry.game_url.rstrip("/").split("/")[-1])
+        print(
+            f"\rpersisted_played_games[{index}/{total}]: fetch_game({game_id})",
+            end="",
+            flush=True,
+        )
+        fetch_game(game_id, integration_db_dir)
+        game_ids.append(game_id)
+    print("\npersisted_played_games: fetch phase complete", flush=True)
+    return game_ids
 
 @pytest.mark.integration
-def test_scrape_game_id_real_network():
-    result = extract_game_by_id(GAME_ID)
+def test_fetch_game_from_network_and_store_in_db(integration_db_dir):
+    result = fetch_game(GAME_ID, integration_db_dir)
 
-    assert result["game"]["home_team"]
-    assert result["game"]["away_team"]
-    assert result["score"]["current"]
-    assert isinstance(result["actions"], list)
+    assert result.game.home_team
+    assert result.game.away_team
+    assert result.score.current
+    assert isinstance(result.actions, list)
+
+    persisted = load_game(integration_db_dir, GAME_ID)
+    assert persisted is not None
+    assert persisted.game.home_team == result.game.home_team
+    assert persisted.game.away_team == result.game.away_team
 
 
 @pytest.mark.integration
-def test_extract_all_games_from_season():
-    print(f"test_extract_all_games_from_season: starting schedule extraction from {SEASON_SCHEDULE_URL}")
-    on_progress = _make_progress_printer("test_extract_all_games_from_season")
-    games = extract_games_from_listing_with_progress(SEASON_SCHEDULE_URL, progress_callback=on_progress)
+def test_fetch_schedule_from_network_and_store_in_db(persisted_schedule, integration_db_dir):
+    assert len(persisted_schedule) > 0
+
+    db_file = integration_db_dir / "cache.db"
+    assert db_file.exists(), "Expected cache.db to be created after fetch_schedule"
+
+
+@pytest.mark.integration
+def test_fetch_table_from_network_and_store_in_db(integration_db_dir):
+    standings = fetch_table(SEASON_ID, integration_db_dir)
+
+    assert len(standings) > 0
+    assert standings[0].team
+
+    persisted = load_standings(integration_db_dir, SEASON_ID)
+    assert persisted is not None
+    assert len(persisted) == len(standings)
+
+
+@pytest.mark.integration
+def test_get_schedule_reads_data_from_db_after_fetch(persisted_schedule, integration_db_dir):
+    loaded = get_schedule(SEASON_ID, integration_db_dir)
+
+    assert loaded is not None
+    assert len(loaded) == len(persisted_schedule)
+    assert loaded[0].game_url == persisted_schedule[0].game_url
+    assert loaded[0].date == persisted_schedule[0].date
+
+
+@pytest.mark.integration
+def test_get_games_for_date_uses_persisted_schedule(persisted_schedule, integration_db_dir):
+    games = get_games_for_date(SEASON_ID, ROUND_DATE, integration_db_dir)
+
+    assert isinstance(games, list)
+    assert len(games) > 0
+    assert all(entry.date.startswith(ROUND_DATE) for entry in games)
+
+
+@pytest.mark.integration
+def test_get_all_played_games_uses_persisted_schedule(persisted_schedule, integration_db_dir):
+    played = get_all_played_games(SEASON_ID, integration_db_dir)
+
+    assert isinstance(played, list)
+    assert len(played) > 0
+    previous_line_length = 0
+    for index, entry in enumerate(played, start=1):
+        game_id = entry.game_url.rstrip("/").split("/")[-1] if entry.game_url else "unknown"
+        line = f"played[{index}/{len(played)}]: game_id={game_id} url={entry.game_url} result={entry.game_result}"
+        clear_tail = " " * max(0, previous_line_length - len(line))
+        print(
+            f"\r{line}{clear_tail}",
+            end="",
+            flush=True,
+        )
+        previous_line_length = len(line)
+        assert entry.game_result
     print()
 
-    assert len(games) > 0
-
-    for i, game in enumerate(games):
-        assert "game" in game, f"game {i} missing 'game' key"
-        assert "score" in game, f"game {i} missing 'score' key"
-        assert "actions" in game, f"game {i} missing 'actions' key"
-
-        g = game["game"]
-        assert g.get("home_team"), f"game {i} missing home_team"
-        assert g.get("away_team"), f"game {i} missing away_team"
-
-        s = game["score"]
-        assert s.get("current"), f"game {i} missing score current"
-        assert isinstance(s.get("home_score"), int), f"game {i} home_score is not int"
-        assert isinstance(s.get("away_score"), int), f"game {i} away_score is not int"
-        assert isinstance(s.get("periods"), list), f"game {i} periods is not list"
-        assert len(s["periods"]) >= 3, f"game {i} has fewer than 3 periods"
-
-        assert isinstance(game["actions"], list), f"game {i} actions is not list"
-
 
 @pytest.mark.integration
-def test_extract_games_by_date_from_season():
-    print(f"test_extract_games_by_date_from_season: starting schedule extraction for date {ROUND_DATE} from {SEASON_SCHEDULE_URL}")
-    games = extract_games_from_listing_by_date(SEASON_SCHEDULE_URL, ROUND_DATE)
+def test_calculated_standings_match_overview(persisted_played_games, integration_db_dir):
+    print("test_calculated_standings_match_overview: calculating standings from persisted DB games")
+    overview_html = fetch_html(SEASON_OVERVIEW_URL)
 
-    assert len(games) > 0
-
-    for i, game in enumerate(games):
-        assert "game" in game, f"game {i} missing 'game' key"
-        assert "score" in game, f"game {i} missing 'score' key"
-        assert "actions" in game, f"game {i} missing 'actions' key"
-
-        g = game["game"]
-        assert g.get("home_team"), f"game {i} missing home_team"
-        assert g.get("away_team"), f"game {i} missing away_team"
-
-        s = game["score"]
-        assert s.get("current"), f"game {i} missing score current"
-        assert isinstance(s.get("home_score"), int), f"game {i} home_score is not int"
-        assert isinstance(s.get("away_score"), int), f"game {i} away_score is not int"
-
-
-@pytest.mark.integration
-def test_calculated_standings_match_overview():
-    print(f"test_calculated_standings_match_overview: starting schedule extraction from {SEASON_SCHEDULE_URL}")
-    on_progress = _make_progress_printer("test_calculated_standings_match_overview")
-    games = extract_games_from_listing_with_progress(SEASON_SCHEDULE_URL, progress_callback=on_progress)
-    print()
-
-    overview_url = SEASON_SCHEDULE_URL.replace("Schedule", "Overview")
-    overview_html = fetch_html(overview_url)
-
-    calculated = calculate_standings(games)
+    calculated = get_standings(SEASON_ID, integration_db_dir)
     overview = parse_overview_standings_html(overview_html)
     mismatches = compare_standings(calculated, overview)
 

@@ -1,7 +1,11 @@
 import re
-from typing import Dict, List, Optional
+from datetime import date
+from pathlib import Path
+from typing import List, Optional
 
-from src.shl.helpers.extraction import extract_game, extract_game_by_id
+from src.shl.helpers.extraction import extract_game_by_id
+from src.shl.models import Action, Game, Score, ScoreChangeResult, ScoringEvent
+from src.shl.store import load_game, save_game
 
 
 class CompareGameScoreChangeError(RuntimeError):
@@ -12,109 +16,73 @@ class FetchGameError(RuntimeError):
     pass
 
 
-def fetch_game(game_url: str) -> Dict[str, object]:
+def _is_past_game_snapshot(game: Game) -> bool:
+    game_date_text = (game.game.date_time or "")[:10]
+    if not game_date_text:
+        return False
+
     try:
-        return extract_game(game_url)
-    except Exception as exc:
-        raise FetchGameError(f"fetch_game failed for '{game_url}': {exc}") from exc
+        game_date = date.fromisoformat(game_date_text)
+    except ValueError:
+        return False
+
+    return game_date < date.today()
 
 
-def fetch_game_by_id(game_id: int) -> Dict[str, object]:
+def fetch_game(game_id: int, db_dir: Path, force_reparse: bool = False) -> Game:
     try:
-        return extract_game_by_id(game_id)
+        if not force_reparse:
+            cached = load_game(db_dir, game_id)
+            if cached is not None and _is_past_game_snapshot(cached):
+                return cached
+
+        game = extract_game_by_id(game_id)
+        save_game(db_dir, game_id, game)
+        return game
     except Exception as exc:
-        raise FetchGameError(f"fetch_game_by_id failed for '{game_id}': {exc}") from exc
+        raise FetchGameError(f"fetch_game failed for '{game_id}': {exc}") from exc
 
 
-# REQ facade aliases.
 fetchGame = fetch_game
-fetchGameById = fetch_game_by_id
 
 
-def _extract_score_pair(game: Dict[str, object]) -> Dict[str, int]:
-    score = game.get("score")
-    if not isinstance(score, dict):
-        raise CompareGameScoreChangeError("Game object is missing a 'score' dictionary")
-
-    home_score = score.get("home_score")
-    away_score = score.get("away_score")
-    if isinstance(home_score, int) and isinstance(away_score, int):
-        return {"home": home_score, "away": away_score}
-
-    raw_score = score.get("current") or score.get("final")
-    if not isinstance(raw_score, str):
-        raise CompareGameScoreChangeError("Score must contain 'home_score'/'away_score' or 'current'/'final'")
-
-    match = re.search(r"(\d+)\s*-\s*(\d+)", raw_score)
-    if match is None:
-        raise CompareGameScoreChangeError(f"Could not parse score from '{raw_score}'")
-
-    return {"home": int(match.group(1)), "away": int(match.group(2))}
+def _extract_score_pair(game: Game) -> Score:
+    return game.score
 
 
-def _goal_action_key(action: Dict[str, object]) -> Optional[tuple]:
-    goal = action.get("goal")
-    if not isinstance(goal, dict):
+def _goal_action_key(action: Action) -> Optional[tuple]:
+    if action.goal is None:
         return None
-
-    home_score = goal.get("home_score")
-    away_score = goal.get("away_score")
-    game_time = action.get("game_time")
-    player_text = action.get("player_text")
-    if not isinstance(home_score, int) or not isinstance(away_score, int):
-        return None
-
-    return (home_score, away_score, str(game_time), str(player_text))
+    return (action.goal.home_score, action.goal.away_score, action.game_time, action.player_text)
 
 
-def _extract_goal_actions(game: Dict[str, object]) -> List[Dict[str, object]]:
-    actions = game.get("actions")
-    if not isinstance(actions, list):
-        return []
-
-    goal_actions: List[Dict[str, object]] = []
-    for action in actions:
-        if not isinstance(action, dict):
-            continue
-        key = _goal_action_key(action)
-        if key is None:
-            continue
-        goal_actions.append(action)
-
-    return goal_actions
+def _extract_goal_actions(game: Game) -> List[Action]:
+    return [a for a in game.actions if a.goal is not None]
 
 
-def _action_key(action: Dict[str, object]) -> tuple:
-    players = action.get("players")
-    players_key = tuple(players) if isinstance(players, list) else ()
+def _action_key(action: Action) -> tuple:
     return (
-        str(action.get("period")),
-        str(action.get("game_time")),
-        str(action.get("event_type")),
-        str(action.get("team_abbrev")),
-        str(action.get("player_text")),
-        players_key,
+        str(action.period),
+        action.game_time,
+        action.event_type,
+        action.team_abbrev,
+        action.player_text,
+        tuple(action.players),
     )
 
 
-def _extract_actions(game: Dict[str, object]) -> List[Dict[str, object]]:
-    actions = game.get("actions")
-    if not isinstance(actions, list):
-        return []
-    return [action for action in actions if isinstance(action, dict)]
+def _extract_actions(game: Game) -> List[Action]:
+    return list(game.actions)
 
 
-def _extract_new_actions(previous_game: Dict[str, object], current_game: Dict[str, object]) -> List[Dict[str, object]]:
-    prev_actions = _extract_actions(previous_game)
-    curr_actions = _extract_actions(current_game)
-
-    prev_counts: Dict[tuple, int] = {}
-    for action in prev_actions:
+def _extract_new_actions(previous_game: Game, current_game: Game) -> List[Action]:
+    prev_counts: dict = {}
+    for action in previous_game.actions:
         key = _action_key(action)
         prev_counts[key] = prev_counts.get(key, 0) + 1
 
-    new_actions: List[Dict[str, object]] = []
-    for action in curr_actions:
+    new_actions: List[Action] = []
+    for action in current_game.actions:
         key = _action_key(action)
         count = prev_counts.get(key, 0)
         if count > 0:
@@ -147,37 +115,38 @@ def _team_abbrev_candidates(team_name: str) -> set:
     return {_normalize_abbrev(candidate) for candidate in candidates if candidate}
 
 
-def _action_matches_team(action: Dict[str, object], team_name: str) -> bool:
-    team_abbrev = action.get("team_abbrev")
-    if not isinstance(team_abbrev, str) or not team_abbrev.strip():
+def _action_matches_team(action: Action, team_name: str) -> bool:
+    if not action.team_abbrev.strip():
         return False
+    return _normalize_abbrev(action.team_abbrev) in _team_abbrev_candidates(team_name)
 
-    return _normalize_abbrev(team_abbrev) in _team_abbrev_candidates(team_name)
 
-
-def _build_event_payload(action: Dict[str, object]) -> Dict[str, Optional[str]]:
-    scorer = action.get("player_text") if isinstance(action.get("player_text"), str) else None
-    scorer_players = action.get("players") if isinstance(action.get("players"), list) else None
-    game_time = action.get("game_time") if isinstance(action.get("game_time"), str) else None
-    return {"scorer": scorer, "scorer_players": scorer_players, "game_time": game_time}
+def _build_event_payload(action: Action) -> ScoringEvent:
+    return ScoringEvent(
+        team="",
+        goals_added=0,
+        scorer=action.player_text,
+        scorer_players=list(action.players),
+        game_time=action.game_time,
+    )
 
 
 def _extract_new_scored_shootout_actions(
-    previous_game: Dict[str, object],
-    current_game: Dict[str, object],
+    previous_game: Game,
+    current_game: Game,
     home_team: str,
     away_team: str,
-) -> List[Dict[str, object]]:
+) -> List[ScoringEvent]:
     new_actions = _extract_new_actions(previous_game, current_game)
-    counts = {
+    counts: dict = {
         home_team: {"count": 0, "last": None},
         away_team: {"count": 0, "last": None},
     }
 
     for action in new_actions:
-        if str(action.get("event_type", "")).upper() != "GWS":
+        if action.event_type.upper() != "GWS":
             continue
-        if str(action.get("shot_outcome", "")).lower() != "scored":
+        if (action.shot_outcome or "").lower() != "scored":
             continue
 
         target_team: Optional[str] = None
@@ -193,86 +162,65 @@ def _extract_new_scored_shootout_actions(
         if counts[target_team]["last"] is None:
             counts[target_team]["last"] = action
 
-    results: List[Dict[str, object]] = []
+    results: List[ScoringEvent] = []
     for team in [home_team, away_team]:
         if counts[team]["count"] <= 0:
             continue
-
-        payload = _build_event_payload(counts[team]["last"]) if counts[team]["last"] is not None else {
-            "scorer": None,
-            "scorer_players": None,
-            "game_time": None,
-        }
-        results.append(
-            {
-                "team": team,
-                "goals_added": counts[team]["count"],
-                "scorer": payload["scorer"],
-                "scorer_players": payload["scorer_players"],
-                "game_time": payload["game_time"],
-            }
-        )
+        last = counts[team]["last"]
+        payload = _build_event_payload(last) if last is not None else ScoringEvent(team="", goals_added=0, scorer=None, scorer_players=None, game_time=None)
+        results.append(ScoringEvent(
+            team=team,
+            goals_added=counts[team]["count"],
+            scorer=payload.scorer,
+            scorer_players=payload.scorer_players,
+            game_time=payload.game_time,
+        ))
 
     return results
 
 
 def _find_scoring_event_for_team(
-    previous_game: Dict[str, object],
-    current_game: Dict[str, object],
-    prev_score: Dict[str, int],
-    curr_score: Dict[str, int],
+    previous_game: Game,
+    current_game: Game,
+    prev_score: Score,
+    curr_score: Score,
     team_side: str,
     team_name: str,
-) -> Dict[str, Optional[str]]:
+) -> ScoringEvent:
     prev_goal_actions = _extract_goal_actions(previous_game)
     curr_goal_actions = _extract_goal_actions(current_game)
 
-    prev_keys = set()
-    for action in prev_goal_actions:
-        key = _goal_action_key(action)
-        if key is not None:
-            prev_keys.add(key)
+    prev_keys = {_goal_action_key(a) for a in prev_goal_actions if _goal_action_key(a) is not None}
 
-    new_goals: List[Dict[str, object]] = []
-    for action in curr_goal_actions:
-        key = _goal_action_key(action)
-        if key is None:
-            continue
-        if key not in prev_keys:
-            new_goals.append(action)
+    new_goals = [a for a in curr_goal_actions if _goal_action_key(a) not in prev_keys]
 
-    team_delta = curr_score[team_side] - prev_score[team_side]
+    prev_home = prev_score.home_score
+    prev_away = prev_score.away_score
+    curr_home = curr_score.home_score
+    curr_away = curr_score.away_score
+    team_delta = (curr_home if team_side == "home" else curr_away) - (prev_home if team_side == "home" else prev_away)
+
     if team_delta <= 0:
-        return {"scorer": None, "scorer_players": None, "game_time": None}
+        return ScoringEvent(team="", goals_added=0, scorer=None, scorer_players=None, game_time=None)
 
-    target_action: Optional[Dict[str, object]] = None
+    target_action: Optional[Action] = None
 
-    if (curr_score["home"] - prev_score["home"]) + (curr_score["away"] - prev_score["away"]) == 1:
+    if (curr_home - prev_home) + (curr_away - prev_away) == 1:
         for action in new_goals + curr_goal_actions:
-            goal = action.get("goal")
-            if not isinstance(goal, dict):
-                continue
-            if goal.get("home_score") == curr_score["home"] and goal.get("away_score") == curr_score["away"]:
+            if action.goal and action.goal.home_score == curr_home and action.goal.away_score == curr_away:
                 target_action = action
                 break
 
     if target_action is None:
         for action in new_goals:
-            goal = action.get("goal")
-            if not isinstance(goal, dict):
+            if action.goal is None:
                 continue
-            home_val = goal.get("home_score")
-            away_val = goal.get("away_score")
-            if not isinstance(home_val, int) or not isinstance(away_val, int):
-                continue
-
             if team_side == "home":
-                if home_val <= prev_score["home"] or home_val > curr_score["home"]:
+                if action.goal.home_score <= prev_home or action.goal.home_score > curr_home:
                     continue
             else:
-                if away_val <= prev_score["away"] or away_val > curr_score["away"]:
+                if action.goal.away_score <= prev_away or action.goal.away_score > curr_away:
                     continue
-
             target_action = action
             break
 
@@ -286,59 +234,49 @@ def _find_scoring_event_for_team(
             target_action = new_actions[0]
 
     if target_action is None:
-        return {"scorer": None, "scorer_players": None, "game_time": None}
+        return ScoringEvent(team="", goals_added=0, scorer=None, scorer_players=None, game_time=None)
 
-    return _build_event_payload(target_action)
+    payload = _build_event_payload(target_action)
+    return ScoringEvent(team="", goals_added=0, scorer=payload.scorer, scorer_players=payload.scorer_players, game_time=payload.game_time)
 
 
-def compare_game_score_change(previous_game: Dict[str, object], current_game: Dict[str, object]) -> Dict[str, object]:
+def compare_game_score_change(previous_game: Game, current_game: Game) -> ScoreChangeResult:
     try:
         prev_score = _extract_score_pair(previous_game)
         curr_score = _extract_score_pair(current_game)
 
-        previous_game_info = previous_game.get("game")
-        current_game_info = current_game.get("game")
-        if not isinstance(previous_game_info, dict) or not isinstance(current_game_info, dict):
-            raise CompareGameScoreChangeError("Both game objects must include a 'game' dictionary")
+        home_team = current_game.game.home_team
+        away_team = current_game.game.away_team
 
-        home_team = current_game_info.get("home_team")
-        away_team = current_game_info.get("away_team")
-        if not isinstance(home_team, str) or not isinstance(away_team, str):
-            raise CompareGameScoreChangeError("Both game objects must include string home_team and away_team")
-
-        scored: List[Dict[str, object]] = []
-        if curr_score["home"] > prev_score["home"]:
+        scored: List[ScoringEvent] = []
+        if curr_score.home_score > prev_score.home_score:
             event = _find_scoring_event_for_team(previous_game, current_game, prev_score, curr_score, "home", home_team)
-            scored.append(
-                {
-                    "team": home_team,
-                    "goals_added": curr_score["home"] - prev_score["home"],
-                    "scorer": event["scorer"],
-                    "scorer_players": event["scorer_players"],
-                    "game_time": event["game_time"],
-                }
-            )
-        if curr_score["away"] > prev_score["away"]:
+            scored.append(ScoringEvent(
+                team=home_team,
+                goals_added=curr_score.home_score - prev_score.home_score,
+                scorer=event.scorer,
+                scorer_players=event.scorer_players,
+                game_time=event.game_time,
+            ))
+        if curr_score.away_score > prev_score.away_score:
             event = _find_scoring_event_for_team(previous_game, current_game, prev_score, curr_score, "away", away_team)
-            scored.append(
-                {
-                    "team": away_team,
-                    "goals_added": curr_score["away"] - prev_score["away"],
-                    "scorer": event["scorer"],
-                    "scorer_players": event["scorer_players"],
-                    "game_time": event["game_time"],
-                }
-            )
+            scored.append(ScoringEvent(
+                team=away_team,
+                goals_added=curr_score.away_score - prev_score.away_score,
+                scorer=event.scorer,
+                scorer_players=event.scorer_players,
+                game_time=event.game_time,
+            ))
 
         if not scored:
             scored.extend(_extract_new_scored_shootout_actions(previous_game, current_game, home_team, away_team))
 
-        return {
-            "scored": len(scored) > 0,
-            "teams_scored": scored,
-            "score": f"{curr_score['home']}-{curr_score['away']}",
-            "previous_score": f"{prev_score['home']}-{prev_score['away']}",
-        }
+        return ScoreChangeResult(
+            scored=len(scored) > 0,
+            teams_scored=scored,
+            score=f"{curr_score.home_score}-{curr_score.away_score}",
+            previous_score=f"{prev_score.home_score}-{prev_score.away_score}",
+        )
     except CompareGameScoreChangeError:
         raise
     except Exception as exc:

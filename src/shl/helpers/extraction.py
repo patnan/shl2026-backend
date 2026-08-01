@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import re
 import time
@@ -8,6 +9,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from src.shl.models import Game, ScheduleEntry
 from .parsing import parse_actions, parse_top_stats
 
 
@@ -161,10 +163,10 @@ def extract_game_urls_from_listing_html_by_date(html: str, base_url: str, game_d
         ) from exc
 
 
-def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[Dict[str, object]]:
+def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[ScheduleEntry]:
     try:
         soup = BeautifulSoup(html, "html.parser")
-        schedule_games: List[Dict[str, object]] = []
+        schedule_games: List[ScheduleEntry] = []
         seen_game_urls = set()
         current_round: Optional[int] = None
         current_date: Optional[str] = None
@@ -211,27 +213,23 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[D
                 result_match = re.search(r"\d+\s*-\s*\d+(?:\s*\([^)]*\))?", row_text)
                 game_result = result_match.group(0).replace(" ", "") if result_match else ""
 
-            spectators: Optional[int] = None
+            spectators = ""
             if len(cells) > 4:
-                spectators_text = re.sub(r"\D", "", cells[4].get_text(" ", strip=True))
-                if spectators_text:
-                    spectators = int(spectators_text)
+                spectators = re.sub(r"\s+", " ", cells[4].get_text(" ", strip=True)).strip()
 
             venue = ""
             if len(cells) > 5:
                 venue = re.sub(r"\s+", " ", cells[5].get_text(" ", strip=True)).strip()
 
-            schedule_games.append(
-                {
-                    "date": current_date,
-                    "time": time_match.group(0) if time_match else "",
-                    "game_result": game_result,
-                    "spectators": spectators,
-                    "venue": venue,
-                    "game_url": game_url,
-                    "round": current_round,
-                }
-            )
+            schedule_games.append(ScheduleEntry(
+                date=current_date,
+                time=time_match.group(0) if time_match else "",
+                game_result=game_result,
+                spectators=spectators,
+                venue=venue,
+                game_url=game_url,
+                round=str(current_round) if current_round is not None else "",
+            ))
 
         return schedule_games
     except Exception as exc:
@@ -240,7 +238,7 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[D
         ) from exc
 
 
-def extract_schedule_games(listing_url: str) -> List[Dict[str, object]]:
+def extract_schedule_games(listing_url: str) -> List[ScheduleEntry]:
     try:
         listing_html = fetch_html(listing_url)
         return extract_schedule_games_from_listing_html(listing_html, base_url=listing_url)
@@ -252,20 +250,19 @@ def extract_schedule_games(listing_url: str) -> List[Dict[str, object]]:
         ) from exc
 
 
-
-def extract_game(url: str) -> Dict[str, object]:
+def extract_game(url: str) -> Game:
     try:
         html = fetch_html(url)
-        stats = parse_top_stats(html)
-        stats["actions"] = parse_actions(html, score_period_count=len(stats.get("score", {}).get("periods", [])))
-        return stats
+        game = parse_top_stats(html)
+        actions = parse_actions(html, score_period_count=len(game.score.periods))
+        return Game(game=game.game, score=game.score, teams=game.teams, actions=actions)
     except ExtractGameError:
         raise
     except Exception as exc:
         raise ExtractGameError(f"extract_game failed for '{url}': {exc}") from exc
 
 
-def extract_game_by_id(game_id: int) -> Dict[str, object]:
+def extract_game_by_id(game_id: int) -> Game:
     try:
         normalized_id = int(game_id)
         if normalized_id <= 0:
@@ -277,7 +274,7 @@ def extract_game_by_id(game_id: int) -> Dict[str, object]:
         raise ExtractGameError(f"extract_game_by_id failed for '{game_id}': {exc}") from exc
 
 
-def extract_games_from_listing(listing_url: str) -> List[Dict[str, object]]:
+def extract_games_from_listing(listing_url: str) -> List[Game]:
     try:
         return extract_games_from_listing_with_progress(listing_url)
     except ExtractGamesFromListingError:
@@ -291,21 +288,17 @@ def extract_games_from_listing(listing_url: str) -> List[Dict[str, object]]:
 def extract_games_from_listing_with_progress(
     listing_url: str,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
-) -> List[Dict[str, object]]:
+) -> List[Game]:
     try:
         schedule_games = extract_schedule_games(listing_url)
-        game_urls = [
-            str(game["game_url"])
-            for game in schedule_games
-            if isinstance(game, dict) and game.get("game_url")
-        ]
+        game_urls = [entry.game_url for entry in schedule_games if entry.game_url]
 
         if not game_urls:
             raise ExtractGamesFromListingWithProgressError(
                 f"No game event links were found on listing page: {listing_url}"
             )
 
-        results: List[Dict[str, object]] = []
+        results: List[Game] = []
         total = len(game_urls)
         for index, game_url in enumerate(game_urls, start=1):
             if progress_callback is not None:
@@ -326,19 +319,15 @@ def extract_games_from_listing_with_progress(
         ) from exc
 
 
-def extract_games_from_listing_by_date(listing_url: str, game_date: str) -> List[Dict[str, object]]:
+def extract_games_from_listing_by_date(listing_url: str, game_date: str) -> List[Game]:
     try:
         schedule_games = extract_schedule_games(listing_url)
-        game_urls = [
-            str(game["game_url"])
-            for game in schedule_games
-            if isinstance(game, dict) and game.get("date") == game_date and game.get("game_url")
-        ]
+        game_urls = [entry.game_url for entry in schedule_games if entry.date == game_date and entry.game_url]
 
         if not game_urls:
             return []
 
-        results: List[Dict[str, object]] = []
+        results: List[Game] = []
         for game_url in game_urls:
             try:
                 results.append(extract_game(game_url))
