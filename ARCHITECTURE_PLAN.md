@@ -285,6 +285,12 @@ Phase 4 Step 1 completion notes:
 3. Extended worker summary metrics in [src/shl/poller.py](src/shl/poller.py) to include stale target counts, duration aggregates, total processed results, and worker start/finish timestamps.
 4. Added/updated unit coverage in [tests/unit/test_poller.py](tests/unit/test_poller.py) for recovery mode fields, worker metric summaries, and circuit-breaker backoff behavior.
 
+Phase 4 Step 2 progress notes (partial, independent of Phase 3):
+1. Added poll lifecycle integration coverage in [tests/integration/test_poller_lifecycle.py](tests/integration/test_poller_lifecycle.py).
+2. Added seed -> due-target selection -> tick execution verification with persisted poll_state updates and poll_completed event writes.
+3. Added failed tick verification for poll_failed events including recovery_mode, retry_in_seconds, and error_count payload/state fields.
+4. Remaining for full Step 2 completion: outbox delivery lifecycle integration tests after Phase 3 worker implementation.
+
 ## Open Decisions
 
 1. SQLite vs Postgres timeline.
