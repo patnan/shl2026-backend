@@ -188,6 +188,37 @@ Run all tests:
 python -m pytest tests/
 ```
 
+## Container usage
+
+Build and run with Docker:
+
+```bash
+docker build -t shl-api .
+docker run --rm -p 8000:8000 -v "$(pwd)/cache:/app/cache" shl-api
+```
+
+Run with Docker Compose (includes restart policy, healthcheck, persistent cache mapping, and basic resource limits):
+
+```bash
+docker compose up -d --build
+```
+
+Configured compose limits:
+- Memory: 1 GB
+- CPU: 2 cores
+
+Inspect health status:
+
+```bash
+docker compose ps
+```
+
+Stop compose service:
+
+```bash
+docker compose down
+```
+
 ## Notes
 
 - Parsing is tuned to SweHockey page structure, including nested tables.
