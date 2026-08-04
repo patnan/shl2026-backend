@@ -30,6 +30,7 @@ def make_schedule_entry(game_id: int) -> ScheduleEntry:
         home_team="Team A",
         away_team="Team B",
         game_result="2-1",
+        periods="",
         spectators="1234",
         venue="Arena",
         game_url=f"https://stats.swehockey.se/Game/Events/{game_id}",

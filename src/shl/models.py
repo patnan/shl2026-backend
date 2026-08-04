@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -211,6 +212,7 @@ class ScheduleEntry:
     home_team: str
     away_team: str
     game_result: str
+    periods: str
     spectators: str
     venue: str
     game_url: str
@@ -224,14 +226,29 @@ class ScheduleEntry:
             home_team=d.get("home_team") or "",
             away_team=d.get("away_team") or "",
             game_result=d.get("game_result") or "",
+            periods=d.get("periods") or "",
             spectators=d.get("spectators") or "",
             venue=d.get("venue") or "",
             game_url=d.get("game_url") or "",
             round=d.get("round") or "",
         )
 
+    @property
+    def overtime(self) -> str:
+        """Return 'OT', 'SO', or '' based on period count in the periods string."""
+        if not self.periods:
+            return ""
+        period_count = len(re.findall(r"\d+-\d+", self.periods))
+        if period_count >= 5:
+            return "SO"
+        if period_count == 4:
+            return "OT"
+        return ""
+
     def to_dict(self) -> Dict:
-        return dataclasses.asdict(self)
+        d = dataclasses.asdict(self)
+        d["overtime"] = self.overtime
+        return d
 
 
 @dataclass(frozen=True)

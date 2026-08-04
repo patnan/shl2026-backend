@@ -235,10 +235,16 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
                 if re.search(r"\d+", spec_text):
                     spectators = spec_text
 
+            periods = ""
+            if len(cells) > 5:
+                periods_text = re.sub(r"\s+", " ", cells[5].get_text(" ", strip=True)).strip()
+                if re.search(r"\(\d+-\d+", periods_text):
+                    periods = periods_text
+
             venue = ""
             if len(cells) > 7:
                 venue = re.sub(r"\s+", " ", cells[7].get_text(" ", strip=True)).strip()
-            elif len(cells) > 5:
+            elif len(cells) > 5 and not periods:
                 venue = re.sub(r"\s+", " ", cells[5].get_text(" ", strip=True)).strip()
 
             # Extract teams from the teams cell.
@@ -256,6 +262,7 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
                 home_team=home_team,
                 away_team=away_team,
                 game_result=game_result,
+                periods=periods,
                 spectators=spectators,
                 venue=venue,
                 game_url=game_url,
