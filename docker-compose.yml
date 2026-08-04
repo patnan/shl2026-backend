@@ -31,7 +31,10 @@ services:
     image: shl-api:latest
     container_name: shl-poller
     restart: unless-stopped
-    command: python -m src.cli poller-run --tick-interval 30
+    command: >
+      sh -c "python -m src.cli poller-seed $${SEASON_ID} && python -m src.cli poller-run --tick-interval 30"
+    environment:
+      SEASON_ID: "${SEASON_ID:-18263}"
     volumes:
       - ./cache:/app/cache
     mem_limit: 512m

@@ -240,3 +240,38 @@ Result of comparing two game snapshots. Returned by `compare_game_score_change`.
 | `previous_score` | `str` | Previous score string, e.g. `"2-2"` |
 
 Has `to_dict` for JSON serialisation.
+
+---
+
+## PollTarget
+
+Represents a poll target with its scheduling state. Returned by store list/query methods.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `int` | Target ID (primary key) |
+| `target_type` | `str` | `"game"`, `"schedule"`, or `"standings"` |
+| `target_key` | `str` | Game ID or season ID as string |
+| `enabled` | `bool` | Whether the target is active |
+| `created_at` | `Optional[str]` | ISO timestamp of creation |
+| `updated_at` | `Optional[str]` | ISO timestamp of last update |
+| `last_success_at` | `Optional[str]` | ISO timestamp of last successful poll |
+| `last_error_at` | `Optional[str]` | ISO timestamp of last failed poll |
+| `error_count` | `int` | Consecutive error count |
+| `next_poll_at` | `Optional[str]` | ISO timestamp of next scheduled poll |
+| `last_duration_ms` | `Optional[int]` | Duration of last poll in milliseconds |
+
+---
+
+## DomainEvent
+
+An event written to the outbox table for downstream processing (e.g. notifications).
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | `int` | Event ID (primary key) |
+| `event_type` | `str` | `"score_changed"`, `"game_state_changed"`, `"poll_completed"`, `"poll_failed"` |
+| `aggregate_key` | `str` | e.g. `"game:1004308"` |
+| `payload` | `Dict` | Event-specific data |
+| `created_at` | `Optional[str]` | ISO timestamp |
+| `processed_at` | `Optional[str]` | ISO timestamp when consumed (None if pending) |
