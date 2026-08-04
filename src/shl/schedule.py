@@ -1,4 +1,5 @@
 import re
+from datetime import date, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -195,6 +196,28 @@ def get_next_round(season_id: int, db_dir: Path) -> Optional[Dict]:
             return {"round": r, "games": games}
 
     return None
+
+
+def get_todays_games(season_id: int, db_dir: Path, today: Optional[date] = None) -> List[ScheduleEntry]:
+    """Return today's games that are upcoming or in progress (no final result yet).
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+        today: Override for the current date (defaults to UTC today).
+
+    Returns:
+        List of ScheduleEntry for today without a game_result. Empty if none.
+    """
+    schedule = load_schedule(db_dir, season_id)
+    if schedule is None:
+        return []
+
+    today_str = (today or date.today()).isoformat()
+    return [
+        entry for entry in schedule
+        if entry.date == today_str and not entry.game_result
+    ]
 
 
 def get_standings(season_id: int, db_dir: Path) -> List[StandingsRow]:

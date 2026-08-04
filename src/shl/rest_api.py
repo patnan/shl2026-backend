@@ -21,6 +21,7 @@ from src.shl.schedule import (
     get_rounds,
     get_schedule,
     get_standings,
+    get_todays_games,
 )
 from src.shl.store import get_games_freshness, get_schedule_fetched_at
 from src.shl.store import get_game_fetched_at, load_game
@@ -189,6 +190,20 @@ def create_app(cache_dir: Path) -> FastAPI:
             "data": {"round": next_round["round"], "games": _serialize(next_round["games"])},
             "meta": {
                 "season_id": str(season_id),
+                "source_fetched_at": source_fetched_at,
+                **_meta(),
+            },
+        }
+
+    @app.get("/seasons/{season_id}/games/today")
+    def season_todays_games(season_id: int) -> Dict[str, Any]:
+        games = get_todays_games(season_id, cache_dir)
+        source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+        return {
+            "data": _serialize(games),
+            "meta": {
+                "season_id": str(season_id),
+                "count": len(games),
                 "source_fetched_at": source_fetched_at,
                 **_meta(),
             },
