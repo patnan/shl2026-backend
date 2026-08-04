@@ -219,6 +219,60 @@ Stop compose service:
 docker compose down
 ```
 
+## Push notifications (Firebase Cloud Messaging)
+
+The notification worker sends push notifications to registered Android/web devices when goals are scored or games end.
+
+### Setup
+
+1. Create a Firebase project at https://console.firebase.google.com
+2. Go to Project Settings → Service Accounts → Generate New Private Key
+3. Save the JSON file as `firebase-credentials.json` in the project root
+
+### Environment variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Firebase service account JSON key | Required for FCM |
+| `SHL_FCM_DRY_RUN` | Set to `"1"` to log notifications without sending | Off |
+| `SHL_CORS_ORIGINS` | Comma-separated allowed CORS origins | `*` |
+| `SHL_RATE_LIMIT_PER_MINUTE` | API rate limit per IP per minute | `60` |
+
+### Device registration
+
+Your app registers for notifications on startup:
+
+```bash
+# Register
+curl -X POST http://127.0.0.1:8000/devices \
+  -H "Content-Type: application/json" \
+  -d '{"fcm_token": "<FCM_TOKEN>", "platform": "android"}'
+
+# Unregister
+curl -X DELETE http://127.0.0.1:8000/devices \
+  -H "Content-Type: application/json" \
+  -d '{"fcm_token": "<FCM_TOKEN>"}'
+```
+
+### Running the notification worker
+
+```bash
+# Local testing (dry-run, logs only):
+SHL_FCM_DRY_RUN=1 python -m src.cli notifier-run
+
+# Production:
+python -m src.cli notifier-run --tick-interval 5
+```
+
+With Docker Compose, the `shl-notifier` service starts automatically and reads `firebase-credentials.json` from the project root.
+
+### Notification types
+
+| Event | Title | Body example |
+|-------|-------|--------------|
+| Goal scored | ⚽ Mål! 2-1 | Brynäs IF Victor Söderström (45:23) |
+| Game ended | 🏁 Slutsignal | Slutresultat: 3-2 |
+
 ## Notes
 
 - Parsing is tuned to SweHockey page structure, including nested tables.
