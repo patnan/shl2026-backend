@@ -133,6 +133,37 @@ def get_rounds(season_id: int, db_dir: Path) -> List[Dict]:
     return [{"round": r, "games": rounds_map[r]} for r in rounds_order]
 
 
+def get_played_rounds(season_id: int, db_dir: Path) -> List[Dict]:
+    """Group only played games (those with a result) into rounds.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+
+    Returns:
+        List of dicts, each with 'round' (str) and 'games' (List[ScheduleEntry]),
+        containing only entries with a game_result. Rounds with no played games
+        are excluded. Empty list if no schedule cached.
+    """
+    schedule = load_schedule(db_dir, season_id)
+    if schedule is None:
+        return []
+
+    rounds_order: List[str] = []
+    rounds_map: Dict[str, List[ScheduleEntry]] = {}
+
+    for entry in schedule:
+        if not entry.game_result:
+            continue
+        round_key = entry.round or ""
+        if round_key not in rounds_map:
+            rounds_order.append(round_key)
+            rounds_map[round_key] = []
+        rounds_map[round_key].append(entry)
+
+    return [{"round": r, "games": rounds_map[r]} for r in rounds_order]
+
+
 def get_standings(season_id: int, db_dir: Path) -> List[StandingsRow]:
     """Compute standings from all played games in the cached schedule.
 

@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from src.shl.schedule import (
     get_all_played_games,
     get_games_for_date,
+    get_played_rounds,
     get_rounds,
     get_schedule,
     get_standings,
@@ -147,6 +148,23 @@ def create_app(cache_dir: Path) -> FastAPI:
         rounds = get_rounds(season_id, cache_dir)
         if not rounds:
             raise HTTPException(status_code=404, detail=f"No schedule stored for season {season_id}")
+        source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+
+        return {
+            "data": [{"round": r["round"], "games": _serialize(r["games"])} for r in rounds],
+            "meta": {
+                "season_id": str(season_id),
+                "total_rounds": len(rounds),
+                "source_fetched_at": source_fetched_at,
+                **_meta(),
+            },
+        }
+
+    @app.get("/seasons/{season_id}/rounds/played")
+    def season_played_rounds(season_id: int) -> Dict[str, Any]:
+        rounds = get_played_rounds(season_id, cache_dir)
+        if not rounds:
+            raise HTTPException(status_code=404, detail=f"No played rounds found for season {season_id}")
         source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
 
         return {
