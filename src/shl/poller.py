@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_SUCCESS_INTERVAL_SECONDS = {
-    "game": 60,
+    "game": 30,
     "schedule": 15 * 60,
     "standings": 5 * 60,
 }
