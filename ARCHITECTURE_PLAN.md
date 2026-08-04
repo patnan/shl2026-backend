@@ -3,6 +3,7 @@
 This document describes a smart implementation plan for the requirements in [REQ.md](REQ.md):
 - pollers fetch data from the internet and store it in DB
 - REST API serves persisted data through get methods
+- notification worker pushes real-time alerts on score/state changes
 
 ## Goals
 
@@ -11,23 +12,30 @@ This document describes a smart implementation plan for the requirements in [REQ
 3. Fast read APIs backed only by persisted state.
 4. Minimal upstream load with cache-first behavior.
 5. Clear separation: fetch writes, get reads.
+6. Real-time push notifications for live game events.
 
 ## High-Level Architecture
 
 1. Polling Worker Service
 - Runs schedule, game, and standings pollers.
 - Calls fetch methods only.
+- Emits domain events on detected changes.
 
 2. Storage Layer
-- SQLite first (existing [src/shl/store.py](src/shl/store.py)).
+- SQLite with WAL mode ([src/shl/store.py](src/shl/store.py)).
+- Store class with schema init once, thread-local connections, batch game loading.
 - Schema designed for easy migration to Postgres.
 
 3. REST API Service
 - Exposes read-only endpoints over persisted data.
 - Calls get methods only.
+- CORS middleware with configurable allowed origins.
+- In-memory per-IP rate limiting.
 
-4. Notification/Outbox Worker (optional phase 2)
-- Reads domain events from DB and publishes notifications.
+4. Notification Worker
+- Reads `score_changed` and `game_state_changed` domain events from outbox.
+- Sends Firebase Cloud Messaging push notifications to registered devices.
+- Implemented in [src/shl/notifier.py](src/shl/notifier.py).
 
 ## Pollers
 
@@ -35,17 +43,23 @@ This document describes a smart implementation plan for the requirements in [REQ
 
 Targets: active season game IDs.
 
-State-based cadence:
-1. Not started: every 5 to 15 minutes.
-2. In progress: every 15 to 45 seconds.
-3. Final: one or two confirmation polls, then stop/reduce.
+Smart game polling:
+- Only polls games currently in progress.
+- Checks schedule date/time against current time with a 4-hour active window.
+- Games outside the active window are skipped until their scheduled time.
+
+Cadence:
+- Active (in progress): every 30 seconds.
+- Not started: skipped until active window begins.
+- Final: one or two confirmation polls, then stop.
 
 Method used:
 - [src/shl/game.py](src/shl/game.py) fetch_game(game_id, db_dir, force_reparse=False)
 
 Change detection:
-- compare latest stored snapshot vs new snapshot via score/actions.
-- if score changed, enqueue domain event.
+- Compare previous stored snapshot vs new snapshot via score/actions.
+- If score changed → emit `score_changed` domain event.
+- If game state changed → emit `game_state_changed` domain event.
 
 ### 2) Schedule Poller
 
@@ -144,11 +158,18 @@ Use current tables as base and extend.
 
 1. domain_events
 - id (PK)
-- event_type (score_changed, game_final, schedule_changed, standings_changed)
+- event_type (score_changed, game_state_changed, schedule_changed, standings_changed)
 - aggregate_key (game_id or season_id)
 - payload_json
 - created_at
 - processed_at (nullable)
+
+### Device registration table
+
+1. devices
+- fcm_token (PK)
+- platform (android, web, ios)
+- registered_at
 
 ## Write Pipeline
 
@@ -164,7 +185,7 @@ For each due poll target:
 5. If changed:
 - upsert current-state table
 - append snapshot table row
-- append domain_events row
+- append domain_events row (score_changed / game_state_changed)
 - compute next_poll_at by new state
 
 6. Persist poll metrics/status.
@@ -173,12 +194,19 @@ For each due poll target:
 
 REST API reads from DB only. No live scrape in request path.
 
-Suggested endpoints:
-1. GET /seasons/{season_id}/schedule
-2. GET /seasons/{season_id}/games?date=YYYY-MM-DD
-3. GET /games/{game_id}
-4. GET /seasons/{season_id}/standings
-5. GET /events/recent
+Endpoints:
+1. GET /health
+2. GET /seasons/{season_id}/schedule
+3. GET /seasons/{season_id}/games?date=YYYY-MM-DD
+4. GET /seasons/{season_id}/games/played
+5. GET /seasons/{season_id}/games/today
+6. GET /seasons/{season_id}/standings
+7. GET /seasons/{season_id}/rounds
+8. GET /seasons/{season_id}/rounds/played
+9. GET /seasons/{season_id}/rounds/next
+10. GET /games/{game_id}
+11. POST /devices
+12. DELETE /devices
 
 Response metadata:
 1. fetched_at
@@ -197,6 +225,36 @@ Get (read path):
 2. get_games_for_date
 3. get_all_played_games
 4. get_standings
+5. get_rounds
+6. get_played_rounds
+7. get_next_round
+8. get_todays_games
+
+Device registration:
+1. register_device
+2. unregister_device
+3. list_device_tokens
+
+## Notification Pipeline
+
+1. Notification worker polls domain_events outbox for unprocessed events.
+2. Filters for `score_changed` and `game_state_changed` event types.
+3. Builds notification payload (title, body, data).
+4. Sends FCM multicast to all registered device tokens.
+5. Marks events as processed.
+
+Notification types:
+- Goal scored: "⚽ Mål! {score}" with scorer details.
+- Game ended: "🏁 Slutsignal" with final result.
+
+## Deployment
+
+Docker Compose runs 3 services:
+1. `shl-api` — REST API server (port 8000, 1GB memory, 2 CPUs).
+2. `shl-poller` — Poller worker, ticks every 30 seconds (512MB memory, 1 CPU).
+3. `shl-notifier` — Notification worker, checks events every 5 seconds (256MB memory, 0.5 CPU).
+
+All services share a volume-mounted SQLite database in `cache/`.
 
 ## Reliability and Safety
 
@@ -212,6 +270,8 @@ Get (read path):
 2. force_reparse only for admin/manual refresh.
 3. Adaptive poll intervals by game state.
 4. Persistent integration cache for faster test reruns.
+5. WAL mode for concurrent read/write access.
+6. Batch game loading for standings computation.
 
 ## Observability
 
@@ -221,6 +281,7 @@ Track metrics:
 3. stale_targets_count
 4. score_change_events_count
 5. cache_hit_ratio for fetch methods
+6. notification_sent_count / notification_error_count
 
 Structured logs include:
 1. poller name
@@ -272,12 +333,24 @@ Phase 2 Step 2 completion notes:
 3. Expanded API tests in [tests/unit/test_rest_api.py](tests/unit/test_rest_api.py) to validate freshness metadata fields.
 
 Phase 3:
-1. add outbox worker and notifications
-2. add admin force-reparse endpoints
+1. [x] add outbox worker and notifications
+2. [x] add device registration endpoints
+
+Phase 3 completion notes:
+1. Implemented notification worker in [src/shl/notifier.py](src/shl/notifier.py) reading `score_changed` and `game_state_changed` events from the domain_events outbox.
+2. Sends Firebase Cloud Messaging push notifications via firebase-admin to all registered devices.
+3. Added device registration store methods: register_device, unregister_device, list_device_tokens in [src/shl/store.py](src/shl/store.py).
+4. Added POST /devices and DELETE /devices REST endpoints in [src/shl/rest_api.py](src/shl/rest_api.py).
+5. Added CORS middleware with configurable origins (SHL_CORS_ORIGINS env var).
+6. Added in-memory per-IP rate limiting (SHL_RATE_LIMIT_PER_MINUTE env var).
+7. Added CLI notifier-run command in [src/cli.py](src/cli.py).
+8. Smart game polling: poller checks schedule date/time and only polls games within a 4-hour active window.
+9. Poller emits `score_changed` and `game_state_changed` domain events by comparing previous/current game snapshot.
+10. Store refactored to Store class with WAL mode, schema init once, thread-local connections, and batch game loading.
 
 Phase 4:
 1. [x] harden observability and failure recovery
-2. add integration tests for poll lifecycle and event generation
+2. [x] add integration tests for poll lifecycle and event generation
 
 Phase 4 Step 1 completion notes:
 1. Enhanced poll failure recovery in [src/shl/poller.py](src/shl/poller.py) with jittered exponential backoff and a circuit-breaker cooldown mode after repeated target failures.
@@ -285,15 +358,14 @@ Phase 4 Step 1 completion notes:
 3. Extended worker summary metrics in [src/shl/poller.py](src/shl/poller.py) to include stale target counts, duration aggregates, total processed results, and worker start/finish timestamps.
 4. Added/updated unit coverage in [tests/unit/test_poller.py](tests/unit/test_poller.py) for recovery mode fields, worker metric summaries, and circuit-breaker backoff behavior.
 
-Phase 4 Step 2 progress notes (partial, independent of Phase 3):
+Phase 4 Step 2 completion notes:
 1. Added poll lifecycle integration coverage in [tests/integration/test_poller_lifecycle.py](tests/integration/test_poller_lifecycle.py).
 2. Added seed -> due-target selection -> tick execution verification with persisted poll_state updates and poll_completed event writes.
 3. Added failed tick verification for poll_failed events including recovery_mode, retry_in_seconds, and error_count payload/state fields.
-4. Remaining for full Step 2 completion: outbox delivery lifecycle integration tests after Phase 3 worker implementation.
+4. Added outbox delivery lifecycle integration tests verifying notification worker processes domain events correctly.
 
 ## Open Decisions
 
-1. SQLite vs Postgres timeline.
-2. Poller runtime model (single process, cron, or queue worker).
-3. Notification channels and dedupe keys.
-4. Retention policy for snapshot/history tables.
+1. SQLite vs Postgres timeline — currently SQLite with WAL mode; migrate when concurrent write pressure requires it.
+2. Retention policy for snapshot/history tables — no automatic pruning yet.
+3. Admin force-reparse endpoints — not yet exposed via REST API.
