@@ -274,6 +274,8 @@ The notification worker sends push notifications to registered Android/web devic
 | `SHL_FCM_DRY_RUN` | Set to `"1"` to log notifications without sending | Off |
 | `SHL_CORS_ORIGINS` | Comma-separated allowed CORS origins | `*` |
 | `SHL_RATE_LIMIT_PER_MINUTE` | API rate limit per IP per minute | `60` |
+| `SHL_LOG_LEVEL` | Log level: DEBUG, INFO, WARNING, ERROR | `INFO` |
+| `SHL_LOG_FORMAT` | Log format: `json` (structured) or `text` (human-readable) | `json` |
 
 ### Device registration
 
