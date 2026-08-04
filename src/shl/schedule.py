@@ -7,8 +7,7 @@ from src.shl.helpers.extraction import (
     extract_schedule_games,
 )
 from src.shl.models import ScheduleEntry, StandingsRow
-from src.shl.store import save_schedule, load_schedule, load_games_batch
-from src.shl.standings import calculate_standings
+from src.shl.store import save_schedule, load_schedule
 
 
 class FetchScheduleError(RuntimeError):
@@ -220,10 +219,10 @@ def get_todays_games(season_id: int, db_dir: Path, today: Optional[date] = None)
 
 
 def get_standings(season_id: int, db_dir: Path) -> List[StandingsRow]:
-    """Compute standings from all played games in the cached schedule.
+    """Compute standings from played schedule entries.
 
-    Loads all games referenced by the schedule in a single batch query
-    and calculates the standings table.
+    Uses game results and overtime info directly from the schedule — no need
+    to fetch individual game detail pages.
 
     Args:
         season_id: SweHockey season/tournament ID.
@@ -233,13 +232,135 @@ def get_standings(season_id: int, db_dir: Path) -> List[StandingsRow]:
         Sorted list of StandingsRow dataclasses.
     """
     played = get_all_played_games(season_id, db_dir)
-    game_ids = [
-        int(m.group(1))
-        for entry in played
-        if (m := re.search(r"/(\d+)$", entry.game_url))
+    return calculate_standings_from_schedule(played)
+
+
+def calculate_standings_from_schedule(entries: List[ScheduleEntry]) -> List[StandingsRow]:
+    """Calculate league standings from schedule entries with results.
+
+    SHL scoring rules:
+    - Regulation win: 3 points
+    - OT/SO win: 2 points
+    - OT/SO loss: 1 point
+    - Regulation loss: 0 points
+
+    Args:
+        entries: List of ScheduleEntry with game_result set.
+
+    Returns:
+        Sorted list of StandingsRow dataclasses with rank assigned.
+    """
+    standings: Dict[str, Dict] = {}
+
+    def ensure_team(team_name: str) -> Dict:
+        if team_name not in standings:
+            standings[team_name] = {
+                "team": team_name,
+                "games_played": 0,
+                "w": 0, "t": 0, "l": 0,
+                "goals_for": 0, "goals_against": 0, "goal_difference": 0,
+                "points": 0,
+                "otw": 0, "otl": 0, "gwsw": 0, "gwsl": 0,
+            }
+        return standings[team_name]
+
+    for entry in entries:
+        if not entry.home_team or not entry.away_team or not entry.game_result:
+            continue
+
+        # Parse score from game_result (e.g. "2 - 3" or "4-7")
+        score_match = re.search(r"(\d+)\s*-\s*(\d+)", entry.game_result)
+        if not score_match:
+            continue
+
+        home_score = int(score_match.group(1))
+        away_score = int(score_match.group(2))
+        ot = entry.overtime  # "OT", "SO", or ""
+
+        home = ensure_team(entry.home_team)
+        away = ensure_team(entry.away_team)
+
+        home["games_played"] += 1
+        away["games_played"] += 1
+        home["goals_for"] += home_score
+        home["goals_against"] += away_score
+        away["goals_for"] += away_score
+        away["goals_against"] += home_score
+
+        if home_score == away_score:
+            # Shouldn't happen for finished games, but handle gracefully
+            home["points"] += 1
+            away["points"] += 1
+            home["t"] += 1
+            away["t"] += 1
+        elif home_score > away_score:
+            winner, loser = home, away
+            if ot == "OT":
+                winner["points"] += 2
+                loser["points"] += 1
+                winner["otw"] += 1
+                loser["otl"] += 1
+                winner["t"] += 1
+                loser["t"] += 1
+            elif ot == "SO":
+                winner["points"] += 2
+                loser["points"] += 1
+                winner["gwsw"] += 1
+                loser["gwsl"] += 1
+                winner["t"] += 1
+                loser["t"] += 1
+            else:
+                winner["points"] += 3
+                winner["w"] += 1
+                loser["l"] += 1
+        else:
+            winner, loser = away, home
+            if ot == "OT":
+                winner["points"] += 2
+                loser["points"] += 1
+                winner["otw"] += 1
+                loser["otl"] += 1
+                winner["t"] += 1
+                loser["t"] += 1
+            elif ot == "SO":
+                winner["points"] += 2
+                loser["points"] += 1
+                winner["gwsw"] += 1
+                loser["gwsl"] += 1
+                winner["t"] += 1
+                loser["t"] += 1
+            else:
+                winner["points"] += 3
+                winner["w"] += 1
+                loser["l"] += 1
+
+    for entry in standings.values():
+        entry["goal_difference"] = entry["goals_for"] - entry["goals_against"]
+
+    sorted_standings = sorted(
+        standings.values(),
+        key=lambda e: (-e["points"], -e["goal_difference"], -e["goals_for"], e["team"]),
+    )
+
+    return [
+        StandingsRow(
+            rank=i,
+            team=e["team"],
+            games_played=e["games_played"],
+            w=e["w"],
+            t=e["t"],
+            l=e["l"],
+            goals_for=e["goals_for"],
+            goals_against=e["goals_against"],
+            goal_difference=e["goal_difference"],
+            tp=e["points"],
+            otw=e["otw"],
+            otl=e["otl"],
+            gwsw=e["gwsw"],
+            gwsl=e["gwsl"],
+        )
+        for i, e in enumerate(sorted_standings, start=1)
     ]
-    games = load_games_batch(db_dir, game_ids)
-    return calculate_standings(games)
 
 
 fetchSchedule = fetch_schedule
