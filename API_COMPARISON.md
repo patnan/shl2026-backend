@@ -319,18 +319,20 @@ shl2026's `GET /games/{game_id}` does have `Score.home_score`, `Score.away_score
 
 ### What would be needed for parity
 
-To replicate the old today endpoint's live behavior, shl2026 would need:
-1. A live polling mechanism (scrape the swehockey live page periodically during game windows)
-2. Store live state (scores, period, status) somewhere accessible to the API
-3. Return enriched game objects for today's games
+The schedule page already provides live scores (updated mid-game by SweHockey), which is how shl2026 standings are already live. The only missing piece for full live game tracking is **period and clock info**, which is available on each game's detail page (`score.current_period`, `score.state`).
 
-This is the same live-scraping infrastructure the old backend has via `SweTodaysExtractor` + `SweTodaysManager`.
+To add this:
+1. Poll game detail pages for today's active games during game windows (the `game` target type and `fetch_game` infrastructure already exist)
+2. Store the fetched game state in the DB (already happens via `save_game`)
+3. Return enriched game objects via the API (already possible via `GET /games/{game_id}`)
+
+This is a small extension of existing infrastructure — not a new scraping system.
 
 ### Verdict
 
-**Not mappable for the live use case.** The date filter works fine for showing today's upcoming schedule, but the core value of the old endpoint — real-time scores, period tracking, and status transitions during game day — has no equivalent in shl2026-backend. This is a **capability gap**, not just a data format difference.
+**Mostly covered.** Live scores are already available via the schedule (30s refresh). Period/clock tracking requires polling individual game detail pages during active windows — the infrastructure exists, it just needs to be wired up as an automatic polling target during game days.
 
-For a non-live "what's on today" view, the schedule adapter works. For game-day live tracking, new infrastructure is needed.
+For a non-live "what's on today" view, the schedule works directly. For full game-day live tracking with period info, activate game detail polling for today's games.
 
 ---
 
@@ -544,7 +546,7 @@ The app points to `https://app.nandorf.org:9449/shl/` — this is the older mono
 | `gamedetails/{key}` | `GET /games/{game_id}` | ✅ **Excellent** | shl2026 `TeamStats` has shots/saves/PIM/PP with total + by_period + percentage — maps almost 1:1 to what the app needs |
 | `geteventsbyteam/{key}` | `GET /games/{game_id}` actions | ✅ Good | App needs: time→`game_time`, type→`event_type`, team→`team_abbrev`, playerName→`players[0]`, description→reconstruct |
 | `livetable` | `GET /seasons/{id}/standings` | ✅ Good | Effectively live (30s refresh during games). All fields map except `movement` (default 0). Rename: w→wins, l→losses, otw+gwsw→otWins, otl+gwsl→otLosses, tp→points |
-| `live` | **No equivalent** | ❌ Gap | Needs live scores, period info, hasEnded. shl2026 has no live polling endpoint |
+| `live` | Schedule (scores) + `GET /games/{id}` (period/state) | ⚠️ Partial | Live scores available from schedule (30s refresh). Period/clock requires game detail polling for active games — infrastructure exists, needs wiring |
 | `playerstats` | **No equivalent** | ❌ Gap | Not in shl2026 |
 | `goaliestats` | **No equivalent** | ❌ Gap | Not in shl2026 |
 | `playerstatsbyteam` | **No equivalent** | ❌ Gap | Not in shl2026 |
@@ -578,22 +580,23 @@ This is essentially a field rename + minor formatting. ~30 lines of adapter code
 
 ### Summary
 
-**Can replace with shl2026 today (5/10 endpoints):**
+**Can replace with shl2026 today (6/10 endpoints):**
 - Schedule ✅
 - Game details ✅ (actually better data)
 - Game events ✅
 - Standings ✅ (effectively live — 30s refresh during games, includes `movement`)
 - Live standings ✅ (same endpoint as above, no separate endpoint needed)
+- Live scores ⚠️ (scores from schedule already live; period/clock needs game detail polling — infrastructure exists)
 
-**Cannot replace — needs new infrastructure (5/10 endpoints):**
-- Live scores — needs live polling mechanism for period/clock info
+**Cannot replace — needs new infrastructure (4/10 endpoints):**
+- Live game period/clock — game detail pages have this info; needs polling active games during game windows (infrastructure exists via `game` target type)
 - Player stats, goalie stats, stats by team — needs stats scraping
 - Rosters — needs roster data source
 - EliteProspects — needs EP integration
 
-**Effort to support the 5 mappable endpoints:** ~1-2 days of adapter work. The game details endpoint is the strongest match and would actually give the app richer data than it currently gets.
+**Effort to support the 6 mappable endpoints:** ~1-2 days of adapter work. The game details endpoint is the strongest match and would actually give the app richer data than it currently gets. Adding game detail polling for active games is a small wiring task.
 
-**Effort to reach full parity:** Significant — the missing 5 endpoints represent entire data domains (live game clock/period, player statistics, roster management, external data integration) that would need new scrapers and data pipelines.
+**Effort to reach full parity:** The remaining 4 endpoints represent data domains (player statistics, roster management, external data integration) that would need new scrapers and data pipelines.
 
 ---
 
