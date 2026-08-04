@@ -10,13 +10,14 @@ from time import perf_counter
 from time import sleep as _sleep
 from typing import Any, Dict, List, Optional
 
-from src.shl.game import fetch_game
+from src.shl.game import fetch_game, compare_game_score_change
 from src.shl.schedule import fetch_schedule
 from src.shl.standings import fetch_table
 from src.shl.models import PollTarget, ScheduleEntry
 from src.shl.store import (
     insert_domain_event,
     list_due_poll_targets,
+    load_game,
     load_schedule,
     upsert_poll_target,
     update_poll_error,
@@ -280,7 +281,49 @@ def seed_season_targets(
 
 def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
     if target_type == "game":
-        fetch_game(int(target_key), cache_dir)
+        game_id = int(target_key)
+        previous = load_game(cache_dir, game_id)
+        current = fetch_game(game_id, cache_dir, force_reparse=True)
+
+        if previous is not None and current is not None:
+            result = compare_game_score_change(previous, current)
+            if result.scored:
+                insert_domain_event(
+                    cache_dir,
+                    "score_changed",
+                    f"game:{target_key}",
+                    {
+                        "game_id": game_id,
+                        "score": result.score,
+                        "previous_score": result.previous_score,
+                        "teams_scored": [
+                            {
+                                "team": e.team,
+                                "goals_added": e.goals_added,
+                                "scorer": e.scorer,
+                                "scorer_players": e.scorer_players,
+                                "game_time": e.game_time,
+                            }
+                            for e in result.teams_scored
+                        ],
+                    },
+                )
+
+            # Detect state changes (e.g. game ended).
+            prev_state = previous.score.state
+            curr_state = current.score.state
+            if prev_state != curr_state and curr_state:
+                insert_domain_event(
+                    cache_dir,
+                    "game_state_changed",
+                    f"game:{target_key}",
+                    {
+                        "game_id": game_id,
+                        "previous_state": prev_state,
+                        "current_state": curr_state,
+                        "score": result.score,
+                    },
+                )
         return
 
     if target_type == "schedule":

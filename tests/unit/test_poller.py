@@ -119,7 +119,7 @@ def test_domain_event_mark_processed(monkeypatch, tmp_path):
     )
 
     # Run a successful tick for game target.
-    monkeypatch.setattr("src.shl.poller.fetch_game", lambda game_id, db_dir: None)
+    monkeypatch.setattr("src.shl.poller.fetch_game", lambda game_id, db_dir, force_reparse=False: None)
     run_poller_tick(tmp_path, now=now)
 
     events = list_unprocessed_domain_events(tmp_path)
@@ -314,7 +314,7 @@ def test_game_target_polled_when_active(monkeypatch, tmp_path):
 
     calls = {"fetch_game": 0}
 
-    def fake_fetch_game(game_id, db_dir):
+    def fake_fetch_game(game_id, db_dir, force_reparse=False):
         calls["fetch_game"] += 1
 
     monkeypatch.setattr("src.shl.poller.fetch_game", fake_fetch_game)
