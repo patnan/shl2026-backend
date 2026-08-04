@@ -34,14 +34,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SUCCESS_INTERVAL_SECONDS = {
     "game": 30,
-    "schedule": 60,  # Default, overridden dynamically below.
+    "schedule": 60,  # Default fallback, overridden dynamically.
     "standings": 5 * 60,
 }
 
 # Dynamic schedule intervals based on game activity.
-SCHEDULE_INTERVAL_LIVE_GAMES = 30       # Games in progress right now.
-SCHEDULE_INTERVAL_GAME_DAY = 5 * 60    # Game day but no games live yet / already ended.
-SCHEDULE_INTERVAL_NO_GAMES = 15 * 60   # No games today.
+SCHEDULE_INTERVAL_LIVE_GAMES = 30          # Within active game window.
+SCHEDULE_INTERVAL_GAME_DAY = 15 * 60      # Games today but outside active window.
+SCHEDULE_INTERVAL_NO_GAMES = 2 * 60 * 60  # No games today at all.
 
 DEFAULT_ERROR_BASE_INTERVAL_SECONDS = {
     "game": 30,
@@ -77,9 +77,9 @@ def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optio
 def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -> int:
     """Determine schedule polling interval based on current game activity.
 
-    - Live games (started within active window): 30s
-    - Game day but no live games: 5 min
-    - No games today: 15 min
+    - No games today: every 2 hours.
+    - Games today but outside active window: every 15 minutes.
+    - Within active window (5 min before first game to 4h after last game starts): every 30 seconds.
     """
     schedule = load_schedule(cache_dir, season_id)
     if not schedule:
@@ -91,16 +91,9 @@ def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -
     if not todays_games:
         return SCHEDULE_INTERVAL_NO_GAMES
 
-    # Check if any game is currently live (started but no final result).
-    has_live = False
+    # Parse start times for today's games.
+    start_times: List[datetime] = []
     for entry in todays_games:
-        if entry.game_result:
-            # Has a result — could be live score or final.
-            # If it has overtime info or the game detail shows Final Score,
-            # it's done. But from schedule alone, any result means activity.
-            # Check if there are also unfinished games.
-            continue
-        # No result yet — check if game has started based on time.
         if entry.time:
             try:
                 hour, minute = entry.time.split(":")[:2]
@@ -108,40 +101,26 @@ def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -
                     now.year, now.month, now.day,
                     int(hour), int(minute), tzinfo=now.tzinfo,
                 )
-                if now >= game_start:
-                    has_live = True
-                    break
+                start_times.append(game_start)
             except (ValueError, IndexError):
                 pass
 
-    # Also consider games with results that are still updating (live scores).
-    # If any game today has a result but no periods (means it's in progress),
-    # or has < 3 periods filled, treat as live.
-    for entry in todays_games:
-        if entry.game_result and not entry.overtime:
-            # Has score but game might still be in progress.
-            # Count periods to check.
-            if entry.periods:
-                period_count = len(re.findall(r"\d+-\d+", entry.periods))
-                if period_count < 3:
-                    has_live = True
-                    break
-            else:
-                # Has result but no periods breakdown — likely in progress.
-                has_live = True
-                break
-
-    if has_live:
-        return SCHEDULE_INTERVAL_LIVE_GAMES
-
-    # Game day but all games either haven't started or are finished.
-    unfinished = [e for e in todays_games if not e.game_result]
-    if unfinished:
-        # Games scheduled today but not started yet.
+    if not start_times:
+        # Games today but no parseable times — use game day interval.
         return SCHEDULE_INTERVAL_GAME_DAY
 
-    # All today's games have results — day is done.
-    return SCHEDULE_INTERVAL_NO_GAMES
+    first_start = min(start_times)
+    last_start = max(start_times)
+
+    # Active window: 5 min before first game to 4h after last game starts.
+    window_begin = first_start - timedelta(minutes=5)
+    window_end = last_start + timedelta(hours=4)
+
+    if window_begin <= now <= window_end:
+        return SCHEDULE_INTERVAL_LIVE_GAMES
+
+    # Games today but outside active window.
+    return SCHEDULE_INTERVAL_GAME_DAY
 
 
 def _apply_jitter(interval_seconds: int, jitter_ratio: float = BACKOFF_JITTER_RATIO) -> int:
