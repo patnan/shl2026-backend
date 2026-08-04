@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import logging
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -13,6 +14,8 @@ from src.shl.models import (
     ScheduleEntry,
     StandingsRow,
 )
+
+_logger = logging.getLogger(__name__)
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS games (
@@ -349,7 +352,9 @@ class Store:
             (event_type, aggregate_key, json.dumps(payload, ensure_ascii=False)),
         )
         conn.commit()
-        return cursor.lastrowid
+        event_id = cursor.lastrowid
+        _logger.info("domain_event event_type=%s aggregate_key=%s event_id=%d", event_type, aggregate_key, event_id)
+        return event_id
 
     def list_unprocessed_domain_events(self, limit: int = 100) -> List[DomainEvent]:
         rows = self._get_conn().execute(

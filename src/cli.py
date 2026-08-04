@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import logging
 from pathlib import Path
+
+from src.shl.logging_config import setup_logging
 
 from src.shl.api import (
     calculate_standings,
@@ -172,6 +175,8 @@ def cmd_notifier_run(args: argparse.Namespace, cache_dir: Path) -> None:
 
 
 def main() -> None:
+    setup_logging()
+
     parser = argparse.ArgumentParser(description="SHL scraper and validation toolkit")
     parser.add_argument("--cache-dir", default="cache", help="Cache directory (default: cache)")
     sub = parser.add_subparsers(dest="command", required=True)

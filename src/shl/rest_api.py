@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import re
 import time
@@ -87,6 +88,9 @@ def _extract_game_ids(entries: list[Any]) -> list[int]:
 # App factory
 # ---------------------------------------------------------------------------
 
+logger = logging.getLogger(__name__)
+
+
 def create_app(cache_dir: Path) -> FastAPI:
     app = FastAPI(
         title="SHL Data API",
@@ -116,6 +120,7 @@ def create_app(cache_dir: Path) -> FastAPI:
 
         client_ip = request.client.host if request.client else "unknown"
         if not limiter.is_allowed(client_ip):
+            logger.warning("rate_limited client_ip=%s path=%s", client_ip, request.url.path)
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Too many requests. Try again later."},
