@@ -182,6 +182,9 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
                 current_round = int(round_match.group(1))
                 continue
 
+            if len(cells) < 3:
+                continue
+
             date_text = re.sub(r"\s+", " ", cells[0].get_text(" ", strip=True)).strip()
             date_match = re.search(r"\d{4}-\d{2}-\d{2}", date_text)
             if date_match is not None:
