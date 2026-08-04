@@ -36,12 +36,12 @@ def test_seed_then_tick_updates_poll_state_and_writes_completed_events(monkeypat
         next_poll_at=_iso(now - timedelta(seconds=30)),
     )
 
-    monkeypatch.setattr("src.shl.poller.fetch_schedule", lambda season_id, cache_dir: [])
+    monkeypatch.setattr("src.shl.poller.fetch_schedule", lambda season_id, cache_dir, **kwargs: [])
     monkeypatch.setattr("src.shl.poller.fetch_table", lambda season_id, cache_dir: [])
 
     due_before = list_due_poll_targets(tmp_path, now_iso=_iso(now))
     assert len(due_before) == 2
-    assert {item["target_type"] for item in due_before} == {"schedule", "standings"}
+    assert {item.target_type for item in due_before} == {"schedule", "standings"}
 
     tick_results = run_poller_tick(tmp_path, now=now)
     assert len(tick_results) == 2
@@ -54,13 +54,13 @@ def test_seed_then_tick_updates_poll_state_and_writes_completed_events(monkeypat
     targets = list_poll_targets(tmp_path)
     assert len(targets) == 2
     for target in targets:
-        assert target["error_count"] == 0
-        assert target["last_success_at"] is not None
-        assert target["next_poll_at"] is not None
+        assert target.error_count == 0
+        assert target.last_success_at is not None
+        assert target.next_poll_at is not None
 
     events = list_unprocessed_domain_events(tmp_path)
     assert len(events) == 2
-    assert {event["event_type"] for event in events} == {"poll_completed"}
+    assert {event.event_type for event in events} == {"poll_completed"}
 
 
 def test_failed_tick_updates_error_state_and_writes_failed_event(monkeypatch, tmp_path):
@@ -92,13 +92,13 @@ def test_failed_tick_updates_error_state_and_writes_failed_event(monkeypatch, tm
 
     targets = list_poll_targets(tmp_path)
     assert len(targets) == 1
-    assert targets[0]["error_count"] == 1
-    assert targets[0]["last_error_at"] is not None
+    assert targets[0].error_count == 1
+    assert targets[0].last_error_at is not None
 
     events = list_unprocessed_domain_events(tmp_path)
     assert len(events) == 1
     event = events[0]
-    assert event["event_type"] == "poll_failed"
-    assert event["aggregate_key"] == "game:1004308"
-    assert event["payload"]["recovery_mode"] == "backoff"
-    assert event["payload"]["error_count"] == 1
+    assert event.event_type == "poll_failed"
+    assert event.aggregate_key == "game:1004308"
+    assert event.payload["recovery_mode"] == "backoff"
+    assert event.payload["error_count"] == 1

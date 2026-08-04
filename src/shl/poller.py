@@ -10,14 +10,13 @@ from time import perf_counter
 from time import sleep as _sleep
 from typing import Any, Dict, List, Optional
 
-from src.shl.game import fetch_game, compare_game_score_change
+from src.shl.game import fetch_game
 from src.shl.schedule import fetch_schedule, get_standings
 from src.shl.standings import fetch_table
 from src.shl.models import PollTarget
 from src.shl.store import (
     insert_domain_event,
     list_due_poll_targets,
-    load_game,
     load_schedule,
     upsert_poll_target,
     update_poll_error,
@@ -241,79 +240,42 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
         fetch_schedule(season_id, cache_dir, force_reparse=True)
         new_schedule = load_schedule(cache_dir, season_id) or []
 
-        # Detect per-game score changes.
-        for entry in new_schedule:
-            if not entry.game_url or not entry.game_result:
-                continue
-            prev_result = prev_scores.get(entry.game_url, "")
-            if entry.game_result != prev_result:
-                # Score changed — extract game_id and fetch detail page.
-                game_id_match = re.search(r"/(\d+)$", entry.game_url)
-                if game_id_match:
-                    game_id = int(game_id_match.group(1))
-
-                    # Fetch game detail page to get scorer info.
-                    try:
-                        previous_game = load_game(cache_dir, game_id)
-                        current_game = fetch_game(game_id, cache_dir, force_reparse=True)
-
-                        # Build event payload.
-                        event_payload: Dict = {
-                            "game_id": game_id,
-                            "home_team": entry.home_team,
-                            "away_team": entry.away_team,
-                            "score": entry.game_result,
-                            "previous_score": prev_result,
-                            "overtime": entry.overtime,
-                            "teams_scored": [],
-                        }
-
-                        # Enrich with scorer details if we have both snapshots.
-                        if previous_game is not None and current_game is not None:
-                            result = compare_game_score_change(previous_game, current_game)
-                            if result.scored:
-                                event_payload["teams_scored"] = [
-                                    {
-                                        "team": e.team,
-                                        "goals_added": e.goals_added,
-                                        "scorer": e.scorer,
-                                        "scorer_players": e.scorer_players,
-                                        "game_time": e.game_time,
-                                    }
-                                    for e in result.teams_scored
-                                ]
-
+        # Detect per-game score changes and emit events.
+        # Skip event emission on initial seed (no previous schedule) to avoid
+        # flooding the notifier with hundreds of historical events.
+        if not prev_schedule:
+            logger.info(
+                "initial_seed season=%d games_with_results=%d — skipping event emission",
+                season_id,
+                sum(1 for e in new_schedule if e.game_result),
+            )
+        else:
+            changed_count = 0
+            for entry in new_schedule:
+                if not entry.game_url or not entry.game_result:
+                    continue
+                prev_result = prev_scores.get(entry.game_url, "")
+                if entry.game_result != prev_result:
+                    game_id_match = re.search(r"/(\d+)$", entry.game_url)
+                    if game_id_match:
+                        game_id = int(game_id_match.group(1))
                         insert_domain_event(
                             cache_dir,
                             "score_changed",
                             f"game:{game_id}",
-                            event_payload,
+                            {
+                                "game_id": game_id,
+                                "home_team": entry.home_team,
+                                "away_team": entry.away_team,
+                                "score": entry.game_result,
+                                "previous_score": prev_result,
+                                "overtime": entry.overtime,
+                            },
                         )
+                        changed_count += 1
 
-                        # Detect game ended (had no result before, now has one with overtime info or final).
-                        if not prev_result and entry.game_result:
-                            # Game just got its first result — it started or is in progress.
-                            pass
-                        if previous_game and current_game:
-                            prev_state = previous_game.score.state
-                            curr_state = current_game.score.state
-                            if prev_state != curr_state and curr_state == "Final Score":
-                                insert_domain_event(
-                                    cache_dir,
-                                    "game_state_changed",
-                                    f"game:{game_id}",
-                                    {
-                                        "game_id": game_id,
-                                        "home_team": entry.home_team,
-                                        "away_team": entry.away_team,
-                                        "previous_state": prev_state,
-                                        "current_state": curr_state,
-                                        "score": entry.game_result,
-                                        "overtime": entry.overtime,
-                                    },
-                                )
-                    except Exception as exc:
-                        logger.warning("Failed to fetch game detail for %d: %s", game_id, exc)
+            if changed_count > 0:
+                logger.info("schedule_changes season=%d changed_games=%d", season_id, changed_count)
 
         # Check standings changes.
         new_standings = get_standings(season_id, cache_dir)

@@ -60,10 +60,9 @@ def _ensure_fcm() -> bool:
 def _build_goal_notification(payload: Dict[str, Any]) -> Dict[str, str]:
     """Build notification title and body from a score_changed event payload."""
     score = payload.get("score", "?-?")
-    teams_scored = payload.get("teams_scored", [])
+    teams_scored = payload.get("teams_scored") or []
 
-    # Build title: "⚽ Team A 2 - 1 Team B" style isn't possible without
-    # knowing both teams. Use the score and scoring team.
+    # Build notification text from payload data only — no external fetches.
     scorers = []
     for event in teams_scored:
         team = event.get("team", "")
@@ -76,8 +75,10 @@ def _build_goal_notification(payload: Dict[str, Any]) -> Dict[str, str]:
             parts.append(f"({game_time})")
         scorers.append(" ".join(parts))
 
+    home = payload.get("home_team", "")
+    away = payload.get("away_team", "")
     title = f"⚽ Mål! {score}"
-    body = " | ".join(scorers) if scorers else f"Score: {score}"
+    body = " | ".join(scorers) if scorers else f"{home} - {away}"
 
     return {"title": title, "body": body}
 
