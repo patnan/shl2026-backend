@@ -13,6 +13,7 @@ from src.shl.api import (
 from src.shl.models import Game
 from src.shl.helpers.extraction import fetch_html
 from src.shl.poller import run_poller_worker, seed_season_targets
+from src.shl.notifier import run_notification_worker
 
 
 STANDINGS_COLUMNS = [
@@ -161,6 +162,15 @@ def cmd_poller_run(args: argparse.Namespace, cache_dir: Path) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+def cmd_notifier_run(args: argparse.Namespace, cache_dir: Path) -> None:
+    result = run_notification_worker(
+        cache_dir,
+        tick_interval_seconds=args.tick_interval,
+        max_ticks=args.max_ticks,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="SHL scraper and validation toolkit")
     parser.add_argument("--cache-dir", default="cache", help="Cache directory (default: cache)")
@@ -200,6 +210,11 @@ def main() -> None:
     p_run.add_argument("--tick-interval", type=float, default=5.0, help="Seconds between ticks (default: 5.0)")
     p_run.add_argument("--max-ticks", type=int, help="Stop after N ticks (default: run forever)")
 
+    # notifier run
+    p_notif = sub.add_parser("notifier-run", help="Run notification worker (FCM push)")
+    p_notif.add_argument("--tick-interval", type=float, default=5.0, help="Seconds between event checks (default: 5.0)")
+    p_notif.add_argument("--max-ticks", type=int, help="Stop after N ticks (default: run forever)")
+
     args = parser.parse_args()
     cache_dir = Path(args.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -211,6 +226,7 @@ def main() -> None:
         "serve": cmd_serve,
         "poller-seed": cmd_poller_seed,
         "poller-run": cmd_poller_run,
+        "notifier-run": cmd_notifier_run,
     }[args.command](args, cache_dir)
 
 

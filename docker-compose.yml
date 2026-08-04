@@ -36,3 +36,20 @@ services:
       - ./cache:/app/cache
     mem_limit: 512m
     cpus: 1.0
+
+  shl-notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: shl-api:latest
+    container_name: shl-notifier
+    restart: unless-stopped
+    command: python -m src.cli notifier-run --tick-interval 5
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /app/firebase-credentials.json
+      # SHL_FCM_DRY_RUN: "1"
+    volumes:
+      - ./cache:/app/cache
+      - ./firebase-credentials.json:/app/firebase-credentials.json:ro
+    mem_limit: 256m
+    cpus: 0.5

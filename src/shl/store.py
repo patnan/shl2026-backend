@@ -56,10 +56,18 @@ CREATE TABLE IF NOT EXISTS domain_events (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     processed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS devices (
+    id INTEGER PRIMARY KEY,
+    fcm_token TEXT NOT NULL UNIQUE,
+    platform TEXT NOT NULL DEFAULT 'android',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE INDEX IF NOT EXISTS idx_poll_targets_enabled ON poll_targets(enabled);
 CREATE INDEX IF NOT EXISTS idx_poll_state_next_poll_at ON poll_state(next_poll_at);
 CREATE INDEX IF NOT EXISTS idx_domain_events_processed_at ON domain_events(processed_at);
 CREATE INDEX IF NOT EXISTS idx_domain_events_created_at ON domain_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_devices_fcm_token ON devices(fcm_token);
 """
 
 
@@ -375,6 +383,38 @@ class Store:
         conn.commit()
 
     # ------------------------------------------------------------------
+    # Devices
+    # ------------------------------------------------------------------
+
+    def register_device(self, fcm_token: str, platform: str = "android") -> int:
+        now = _utc_now_iso()
+        conn = self._get_conn()
+        cursor = conn.execute(
+            """
+            INSERT INTO devices (fcm_token, platform, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(fcm_token) DO UPDATE SET
+                platform = excluded.platform,
+                updated_at = excluded.updated_at
+            """,
+            (fcm_token, platform, now, now),
+        )
+        conn.commit()
+        # Return id of inserted or existing row.
+        row = conn.execute("SELECT id FROM devices WHERE fcm_token = ?", (fcm_token,)).fetchone()
+        return int(row[0])
+
+    def unregister_device(self, fcm_token: str) -> bool:
+        conn = self._get_conn()
+        cursor = conn.execute("DELETE FROM devices WHERE fcm_token = ?", (fcm_token,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+    def list_device_tokens(self) -> List[str]:
+        rows = self._get_conn().execute("SELECT fcm_token FROM devices").fetchall()
+        return [row[0] for row in rows]
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
@@ -490,6 +530,18 @@ def list_unprocessed_domain_events(cache_dir: Path, limit: int = 100) -> List[Do
 
 def mark_domain_event_processed(cache_dir: Path, event_id: int, processed_at: Optional[str] = None) -> None:
     _store(cache_dir).mark_domain_event_processed(event_id, processed_at)
+
+
+def register_device(cache_dir: Path, fcm_token: str, platform: str = "android") -> int:
+    return _store(cache_dir).register_device(fcm_token, platform)
+
+
+def unregister_device(cache_dir: Path, fcm_token: str) -> bool:
+    return _store(cache_dir).unregister_device(fcm_token)
+
+
+def list_device_tokens(cache_dir: Path) -> List[str]:
+    return _store(cache_dir).list_device_tokens()
 
 
 def cache_db_path(cache_dir: Path) -> Path:
