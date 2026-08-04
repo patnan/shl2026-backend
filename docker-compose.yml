@@ -21,3 +21,16 @@ services:
       - ./cache:/app/cache
     mem_limit: 1g
     cpus: 2.0
+
+  shl-poller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: shl-api:latest
+    container_name: shl-poller
+    restart: unless-stopped
+    command: python -m src.cli poller-run --tick-interval 60
+    volumes:
+      - ./cache:/app/cache
+    mem_limit: 512m
+    cpus: 1.0

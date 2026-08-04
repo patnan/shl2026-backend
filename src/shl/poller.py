@@ -8,15 +8,16 @@ import random
 import re
 from time import perf_counter
 from time import sleep as _sleep
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from src.shl.game import fetch_game
 from src.shl.schedule import fetch_schedule
 from src.shl.standings import fetch_table
-from src.shl.models import PollTarget
+from src.shl.models import PollTarget, ScheduleEntry
 from src.shl.store import (
     insert_domain_event,
     list_due_poll_targets,
+    load_schedule,
     upsert_poll_target,
     update_poll_error,
     update_poll_success,
@@ -136,6 +137,95 @@ def _extract_game_ids_from_schedule_entries(entries: List[object]) -> List[int]:
     return sorted(game_ids)
 
 
+# Maximum duration (hours) a game can be considered active after its start time.
+GAME_ACTIVE_WINDOW_HOURS = 4
+
+
+def _find_schedule_entry_for_game(cache_dir: Path, game_id: int) -> Optional[ScheduleEntry]:
+    """Look up the schedule entry for a game ID across all cached schedules."""
+    from src.shl.store import Store
+    store = Store(cache_dir)
+    conn = store._get_conn()
+    rows = conn.execute("SELECT data FROM schedule").fetchall()
+    for row in rows:
+        entries = [ScheduleEntry.from_dict(e) for e in json.loads(row[0])]
+        for entry in entries:
+            match = re.search(r"/(\d+)$", entry.game_url)
+            if match and int(match.group(1)) == game_id:
+                return entry
+    return None
+
+
+def _is_game_active(cache_dir: Path, game_id: int, now: datetime) -> tuple[bool, Optional[str]]:
+    """Determine if a game should be actively polled right now.
+
+    Returns:
+        (should_poll, deferred_next_poll_at):
+        - (True, None) if the game is currently active and should be polled.
+        - (False, next_poll_at) if the game should be deferred until the given time.
+    """
+    entry = _find_schedule_entry_for_game(cache_dir, game_id)
+    if entry is None:
+        # No schedule info — poll it (first run before schedule is cached).
+        return True, None
+
+    # If the game already has a final result, defer it far into the future.
+    if entry.game_result:
+        deferred = _to_iso(now + timedelta(hours=24))
+        return False, deferred
+
+    # Parse game date and time.
+    try:
+        game_date = datetime.fromisoformat(entry.date).date() if entry.date else None
+    except ValueError:
+        game_date = None
+
+    if game_date is None:
+        return True, None
+
+    # Parse start time (HH:MM format).
+    game_start: Optional[datetime] = None
+    if entry.time:
+        try:
+            hour, minute = entry.time.split(":")[:2]
+            game_start = datetime(
+                game_date.year, game_date.month, game_date.day,
+                int(hour), int(minute), tzinfo=timezone.utc,
+            )
+        except (ValueError, IndexError):
+            pass
+
+    today = now.date()
+
+    # Game is in the past (date before today) — defer.
+    if game_date < today:
+        deferred = _to_iso(now + timedelta(hours=24))
+        return False, deferred
+
+    # Game is in the future (date after today) — defer until game start.
+    if game_date > today:
+        if game_start:
+            deferred = _to_iso(game_start - timedelta(minutes=5))
+        else:
+            deferred = _to_iso(datetime(game_date.year, game_date.month, game_date.day, tzinfo=timezone.utc))
+        return False, deferred
+
+    # Game is today — check if within the active window.
+    if game_start:
+        window_end = game_start + timedelta(hours=GAME_ACTIVE_WINDOW_HOURS)
+        if now < game_start - timedelta(minutes=5):
+            # Too early — defer until just before start.
+            return False, _to_iso(game_start - timedelta(minutes=5))
+        if now > window_end:
+            # Game window passed — defer.
+            return False, _to_iso(now + timedelta(hours=24))
+        # Within active window — poll.
+        return True, None
+
+    # Today but no start time — poll it.
+    return True, None
+
+
 def seed_season_targets(
     cache_dir: Path,
     season_id: int,
@@ -222,6 +312,24 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
         started = perf_counter()
 
         try:
+            # Skip game targets that are not currently active.
+            if target_type == "game":
+                should_poll, deferred = _is_game_active(cache_dir, int(target_key), now_value)
+                if not should_poll:
+                    duration_ms = int((perf_counter() - started) * 1000)
+                    update_poll_success(cache_dir, target_id, duration_ms, deferred)
+                    results.append({
+                        "target_id": target_id,
+                        "target_type": target_type,
+                        "target_key": target_key,
+                        "status": "skipped",
+                        "duration_ms": duration_ms,
+                        "next_poll_at": deferred,
+                        "due_age_seconds": due_age_seconds,
+                    })
+                    _log_result(results[-1])
+                    continue
+
             _run_target(cache_dir, target_type, target_key)
             duration_ms = int((perf_counter() - started) * 1000)
             next_poll_at = _compute_success_next_poll(target_type, now_value)

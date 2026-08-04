@@ -244,3 +244,119 @@ def test_compute_error_next_poll_uses_circuit_breaker_cooldown(monkeypatch):
     next_poll_at = _compute_error_next_poll("schedule", now, current_error_count=5)
     retry_seconds = int((datetime.fromisoformat(next_poll_at) - now).total_seconds())
     assert retry_seconds >= 20 * 60
+
+
+def test_game_target_skipped_when_not_active(monkeypatch, tmp_path):
+    """Game targets are skipped (deferred) when the game is not currently active."""
+    from src.shl.store import save_schedule
+    from src.shl.models import ScheduleEntry
+
+    now = datetime(2026, 9, 16, 12, 0, 0, tzinfo=timezone.utc)
+
+    # Save a schedule with a game that was yesterday (already finished).
+    save_schedule(tmp_path, 18263, [
+        ScheduleEntry(
+            date="2026-09-15",
+            time="19:00",
+            game_result="3 - 2",
+            spectators="8000",
+            venue="Arena",
+            game_url="https://stats.swehockey.se/Game/Events/1004308",
+            round="1",
+        ),
+    ])
+
+    # Seed the game target.
+    upsert_poll_target(
+        tmp_path,
+        target_type="game",
+        target_key="1004308",
+        enabled=True,
+        next_poll_at=_iso(now - timedelta(seconds=1)),
+    )
+
+    # fetch_game should NOT be called.
+    monkeypatch.setattr("src.shl.poller.fetch_game", lambda *a, **kw: pytest.fail("fetch_game should not be called"))
+
+    results = run_poller_tick(tmp_path, now=now)
+    assert len(results) == 1
+    assert results[0]["status"] == "skipped"
+    assert results[0]["target_key"] == "1004308"
+
+
+def test_game_target_polled_when_active(monkeypatch, tmp_path):
+    """Game targets are polled when the game is currently in progress."""
+    from src.shl.store import save_schedule
+    from src.shl.models import ScheduleEntry
+
+    # Game starts at 19:00 today, now is 20:00 (within active window).
+    now = datetime(2026, 9, 16, 20, 0, 0, tzinfo=timezone.utc)
+
+    save_schedule(tmp_path, 18263, [
+        ScheduleEntry(
+            date="2026-09-16",
+            time="19:00",
+            game_result="",
+            spectators="",
+            venue="Arena",
+            game_url="https://stats.swehockey.se/Game/Events/1004308",
+            round="1",
+        ),
+    ])
+
+    upsert_poll_target(
+        tmp_path,
+        target_type="game",
+        target_key="1004308",
+        enabled=True,
+        next_poll_at=_iso(now - timedelta(seconds=1)),
+    )
+
+    calls = {"fetch_game": 0}
+
+    def fake_fetch_game(game_id, db_dir):
+        calls["fetch_game"] += 1
+
+    monkeypatch.setattr("src.shl.poller.fetch_game", fake_fetch_game)
+
+    results = run_poller_tick(tmp_path, now=now)
+    assert len(results) == 1
+    assert results[0]["status"] == "ok"
+    assert calls["fetch_game"] == 1
+
+
+def test_game_target_deferred_when_future(monkeypatch, tmp_path):
+    """Game targets scheduled for tomorrow are deferred until near game start."""
+    from src.shl.store import save_schedule
+    from src.shl.models import ScheduleEntry
+
+    now = datetime(2026, 9, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+    save_schedule(tmp_path, 18263, [
+        ScheduleEntry(
+            date="2026-09-16",
+            time="19:00",
+            game_result="",
+            spectators="",
+            venue="Arena",
+            game_url="https://stats.swehockey.se/Game/Events/1004308",
+            round="1",
+        ),
+    ])
+
+    upsert_poll_target(
+        tmp_path,
+        target_type="game",
+        target_key="1004308",
+        enabled=True,
+        next_poll_at=_iso(now - timedelta(seconds=1)),
+    )
+
+    monkeypatch.setattr("src.shl.poller.fetch_game", lambda *a, **kw: pytest.fail("fetch_game should not be called"))
+
+    results = run_poller_tick(tmp_path, now=now)
+    assert len(results) == 1
+    assert results[0]["status"] == "skipped"
+    # Should be deferred to near the game start time (2026-09-16T18:55).
+    deferred = datetime.fromisoformat(results[0]["next_poll_at"])
+    assert deferred.date() == datetime(2026, 9, 16).date()
