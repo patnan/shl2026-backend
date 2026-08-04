@@ -124,6 +124,12 @@ Run poller worker loop:
 python -m src.cli poller-run --tick-interval 5 --max-ticks 10
 ```
 
+Run notification worker (push notifications):
+
+```bash
+python -m src.cli notifier-run --tick-interval 5
+```
+
 Typical first run (seed -> poll -> API):
 
 ```bash
@@ -139,6 +145,10 @@ python -m src.cli serve --host 127.0.0.1 --port 8000
 # 4) In another terminal, query persisted data
 curl "http://127.0.0.1:8000/seasons/18263/standings"
 curl "http://127.0.0.1:8000/seasons/18263/games?date=2025-09-16"
+curl "http://127.0.0.1:8000/seasons/18263/games/today"
+curl "http://127.0.0.1:8000/seasons/18263/rounds"
+curl "http://127.0.0.1:8000/seasons/18263/rounds/played"
+curl "http://127.0.0.1:8000/seasons/18263/rounds/next"
 curl "http://127.0.0.1:8000/games/1004308"
 ```
 
@@ -203,9 +213,10 @@ Run with Docker Compose (includes restart policy, healthcheck, persistent cache 
 docker compose up -d --build
 ```
 
-Configured compose limits:
-- Memory: 1 GB
-- CPU: 2 cores
+Compose services:
+- `shl-api` — REST API server (port 8000, 1GB memory, 2 CPUs)
+- `shl-poller` — Poller worker, ticks every 30s (512MB memory, 1 CPU)
+- `shl-notifier` — Notification worker, checks events every 5s (256MB memory, 0.5 CPU)
 
 Inspect health status:
 
