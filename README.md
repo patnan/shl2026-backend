@@ -9,7 +9,7 @@ Code root: [src](src)
 - Parse a single game page into typed dataclasses.
 - Parse season schedule pages into typed schedule entries.
 - Persist games, schedules, and standings in SQLite.
-- Compute standings from played games.
+- Compute standings from played games (effectively live during game days — recalculated every 30s from schedule data).
 - Fetch standings from SweHockey overview pages.
 - Compare two game snapshots and detect scoring changes.
 - CLI support for scraping, overview validation preview, snapshot comparison, poller seeding/worker runs, and REST API serving.

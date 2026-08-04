@@ -41,7 +41,7 @@ This document describes a smart implementation plan for the requirements in [REQ
 
 ### Architecture: Schedule-Driven Polling
 
-The schedule poller is the primary driver for all change detection. Instead of polling individual game pages separately, the schedule page is polled at dynamic intervals and used to detect score changes across all games simultaneously. Game detail pages are only fetched on-demand when a score change is detected (to get scorer details).
+The schedule poller is the primary driver for all change detection. The schedule page is polled at dynamic intervals and used to detect score changes across all games simultaneously. No individual game pages are fetched during polling — change events are emitted directly from schedule data.
 
 ### 1) Schedule Poller (Primary)
 
@@ -55,25 +55,24 @@ Dynamic cadence (adapts to game activity):
 On each tick:
 1. Fetch fresh schedule page.
 2. Compare previous vs new schedule entry scores.
-3. For each game with a score change:
-   - Fetch game detail page (on-demand) for scorer/assist info.
-   - Emit `score_changed` domain event with enriched payload.
-   - If game state changed to "Final Score", emit `game_state_changed` event.
-4. Recalculate standings from updated schedule.
-5. If standings changed, emit `standings_changed` domain event.
+3. For each game with a score change, emit `score_changed` domain event (teams, score, overtime — no game detail fetch needed).
+4. On initial seed (no previous schedule exists), skip event emission to avoid flooding with historical data.
+5. Recalculate standings from updated schedule.
+6. If standings changed, emit `standings_changed` domain event.
 
 Method used:
 - [src/shl/schedule.py](src/shl/schedule.py) fetch_schedule(season_id, db_dir, force_reparse=True)
-- [src/shl/game.py](src/shl/game.py) fetch_game(game_id, db_dir, force_reparse=True) — on-demand
 - [src/shl/schedule.py](src/shl/schedule.py) get_standings(season_id, db_dir) — computed from schedule
 
 ### 2) Game Targets
 
-Game targets exist in the database but are **not actively polled**. They are deferred (24h) and only serve as on-demand fetch targets triggered by the schedule poller when it detects a score change.
+Game targets exist in the database but are **not actively polled**. They serve as on-demand fetch targets for the API's game detail endpoint.
 
 ### 3) Standings
 
 Standings are **computed from schedule data** (not a separate poller). Recalculated on every schedule tick and compared with the previous value. No separate standings polling needed.
+
+Because SweHockey updates the schedule page with in-progress scores during live games, and the poller fetches every 30s during game windows, standings are **effectively live** — they reflect goals within ~30 seconds of being scored. No separate "live standings" endpoint is needed.
 
 ### 4) Overview Standings Poller (Legacy/Validation)
 

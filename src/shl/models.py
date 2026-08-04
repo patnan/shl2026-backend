@@ -267,6 +267,7 @@ class StandingsRow:
     otl: int
     gwsw: int
     gwsl: int
+    movement: int = 0
 
     @classmethod
     def from_dict(cls, d: Dict) -> StandingsRow:
@@ -285,6 +286,7 @@ class StandingsRow:
             otl=d["otl"],
             gwsw=d["gwsw"],
             gwsl=d["gwsl"],
+            movement=d.get("movement", 0),
         )
 
     def to_dict(self) -> Dict:

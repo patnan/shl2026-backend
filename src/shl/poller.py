@@ -18,6 +18,7 @@ from src.shl.store import (
     insert_domain_event,
     list_due_poll_targets,
     load_schedule,
+    save_standings,
     upsert_poll_target,
     update_poll_error,
     update_poll_success,
@@ -297,6 +298,11 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
                     ],
                 },
             )
+
+        # Save standings snapshot for movement calculation on next tick.
+        if new_standings:
+            save_standings(cache_dir, season_id, new_standings)
+
         return
 
     if target_type == "standings":

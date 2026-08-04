@@ -218,6 +218,7 @@ One team row in the standings table.
 | `otl` | `int` | Overtime losses |
 | `gwsw` | `int` | Game winning shot wins |
 | `gwsl` | `int` | Game winning shot losses |
+| `movement` | `int` | Position change since last saved standings (positive = moved up, negative = moved down, 0 = unchanged) |
 
 Has `to_dict` for JSON serialisation.
 

@@ -23,11 +23,12 @@
 | Functionality | shl-se-backend | shl2026-backend |
 |---|---|---|
 | League standings | `GET /standings?league=&season=` | `GET /standings?season_id=` |
-| Live standings | `GET /standings/live?league=` | — |
+| Live standings | `GET /standings/live?league=` | `GET /standings?season_id=` (effectively live) |
 
 **Key data differences:**
 - shl2026 adds: `rank`, `otw` (OT wins), `otl` (OT losses), and a `gws` column
-- shl-se has a live-standings endpoint that recalculates standings during games in progress
+- shl2026 standings are **effectively live during games**: the poller fetches the schedule page every 30s during game windows, and SweHockey updates scores on that page mid-game. `GET /standings` recalculates from the latest cached scores, so standings reflect in-progress games within ~30s of a goal.
+- shl-se has a separate `/standings/live` endpoint; in shl2026 the regular standings endpoint serves the same purpose — no separate endpoint needed.
 
 ---
 
@@ -57,9 +58,9 @@ shl2026-backend is missing a teams endpoint.
 
 | Functionality | shl-se-backend | shl2026-backend |
 |---|---|---|
-| Live standings | `GET /standings/live?league=` | — |
+| Live standings | `GET /standings/live?league=` | `GET /standings?season_id=` (effectively live) |
 
-Both expose game status through schedule data, but only shl-se has a dedicated live-standings recalculation.
+shl2026 does not have a separate live-standings endpoint because it's unnecessary — the regular standings endpoint already reflects in-progress game scores. The poller fetches the schedule page every 30s during game windows, and standings are recalculated from the latest data on every request.
 
 ---
 
@@ -89,9 +90,9 @@ Entirely new capability in shl2026.
 
 ## Summary
 
-**shl2026-backend is stronger in:** richer game/standings data, more schedule query options, push notifications, rate limiting, and data freshness metadata.
+**shl2026-backend is stronger in:** richer game/standings data, more schedule query options, push notifications, rate limiting, data freshness metadata, and effectively live standings during games (30s refresh).
 
-**shl2026-backend is missing:** players/rosters (biggest gap), teams listing, live standings, multi-league support, and API discovery. Players and teams are the most critical functional gaps if this backend is meant to replace shl-se-backend.
+**shl2026-backend is missing:** players/rosters (biggest gap), teams listing, multi-league support, and API discovery. Players and teams are the most critical functional gaps if this backend is meant to replace shl-se-backend.
 
 ---
 
@@ -212,7 +213,7 @@ If live game period tracking isn't needed in the schedule view, this is a straig
 | `goals_against` | `goals_against` | ✅ Direct |
 | `goal_difference` | `goal_difference` | ✅ Direct |
 | `points` | `tp` | ✅ Direct (just rename) |
-| `movement` | Not available — would need to compare against previous standings | ❌ Not possible without historical data |
+| `movement` | `movement` (computed from previously saved standings snapshot) | ✅ Direct |
 | `use_official_points` | Not applicable | Hardcode `True` (trust `tp` as-is) |
 
 ### Semantic note: OT/SO split
@@ -251,7 +252,7 @@ def standings_row_to_team_standing(row: dict, team_map: dict) -> dict:
         "goals_against": row["goals_against"],
         "goal_difference": row["goal_difference"],
         "points": row["tp"],
-        "movement": 0,  # not available without historical comparison
+        "movement": row["movement"],
         "use_official_points": True,
     }
 ```
@@ -267,11 +268,11 @@ def standings_row_to_team_standing(row: dict, team_map: dict) -> dict:
 - Team abbreviations and logos — same ~14-entry dict as the schedule mapping (reuse)
 
 **Not possible without extra work:**
-- `movement` — requires comparing current standings with a previous snapshot. Could default to `0` or implement a simple diff against cached previous standings.
+- None — all fields are covered.
 
 ### Verdict
 
-Easier than the schedule mapping. Most fields are direct renames or simple arithmetic. The same team lookup table needed for schedule covers abbreviations and logos here too. The `movement` field is the only real gap, and it's cosmetic — defaulting to `0` is acceptable.
+Easier than the schedule mapping. Most fields are direct renames or simple arithmetic. The same team lookup table needed for schedule covers abbreviations and logos here too. All fields are covered including `movement`.
 
 Total adapter: ~20 lines of Python.
 
@@ -542,7 +543,7 @@ The app points to `https://app.nandorf.org:9449/shl/` — this is the older mono
 | `schedule` | `GET /seasons/{id}/schedule` | ✅ Easy | Parse `game_result` → homeScore/awayScore. Direct: homeTeam, awayTeam, date, time, game_url |
 | `gamedetails/{key}` | `GET /games/{game_id}` | ✅ **Excellent** | shl2026 `TeamStats` has shots/saves/PIM/PP with total + by_period + percentage — maps almost 1:1 to what the app needs |
 | `geteventsbyteam/{key}` | `GET /games/{game_id}` actions | ✅ Good | App needs: time→`game_time`, type→`event_type`, team→`team_abbrev`, playerName→`players[0]`, description→reconstruct |
-| `livetable` | `GET /seasons/{id}/standings` | ⚠️ Partial | All fields map except `movement` (default 0). Rename: w→wins, l→losses, otw+gwsw→otWins, otl+gwsl→otLosses, tp→points |
+| `livetable` | `GET /seasons/{id}/standings` | ✅ Good | Effectively live (30s refresh during games). All fields map except `movement` (default 0). Rename: w→wins, l→losses, otw+gwsw→otWins, otl+gwsl→otLosses, tp→points |
 | `live` | **No equivalent** | ❌ Gap | Needs live scores, period info, hasEnded. shl2026 has no live polling endpoint |
 | `playerstats` | **No equivalent** | ❌ Gap | Not in shl2026 |
 | `goaliestats` | **No equivalent** | ❌ Gap | Not in shl2026 |
@@ -577,21 +578,22 @@ This is essentially a field rename + minor formatting. ~30 lines of adapter code
 
 ### Summary
 
-**Can replace with shl2026 today (4/10 endpoints):**
+**Can replace with shl2026 today (5/10 endpoints):**
 - Schedule ✅
 - Game details ✅ (actually better data)
 - Game events ✅
-- Standings ⚠️ (missing `movement` only)
+- Standings ✅ (effectively live — 30s refresh during games, includes `movement`)
+- Live standings ✅ (same endpoint as above, no separate endpoint needed)
 
-**Cannot replace — needs new infrastructure (6/10 endpoints):**
-- Live scores — needs live polling mechanism
+**Cannot replace — needs new infrastructure (5/10 endpoints):**
+- Live scores — needs live polling mechanism for period/clock info
 - Player stats, goalie stats, stats by team — needs stats scraping
 - Rosters — needs roster data source
 - EliteProspects — needs EP integration
 
-**Effort to support the 4 mappable endpoints:** ~1-2 days of adapter work. The game details endpoint is the strongest match and would actually give the app richer data than it currently gets.
+**Effort to support the 5 mappable endpoints:** ~1-2 days of adapter work. The game details endpoint is the strongest match and would actually give the app richer data than it currently gets.
 
-**Effort to reach full parity:** Significant — the missing 6 endpoints represent entire data domains (live game state, player statistics, roster management, external data integration) that would need new scrapers and data pipelines.
+**Effort to reach full parity:** Significant — the missing 5 endpoints represent entire data domains (live game clock/period, player statistics, roster management, external data integration) that would need new scrapers and data pipelines.
 
 ---
 

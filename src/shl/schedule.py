@@ -7,7 +7,7 @@ from src.shl.helpers.extraction import (
     extract_schedule_games,
 )
 from src.shl.models import ScheduleEntry, StandingsRow
-from src.shl.store import save_schedule, load_schedule
+from src.shl.store import save_schedule, load_schedule, load_standings
 
 
 class FetchScheduleError(RuntimeError):
@@ -219,20 +219,48 @@ def get_todays_games(season_id: int, db_dir: Path, today: Optional[date] = None)
 
 
 def get_standings(season_id: int, db_dir: Path) -> List[StandingsRow]:
-    """Compute standings from played schedule entries.
+    """Compute standings from played schedule entries, with movement.
 
     Uses game results and overtime info directly from the schedule — no need
-    to fetch individual game detail pages.
+    to fetch individual game detail pages. Movement is calculated by comparing
+    the current rank against the previously saved standings snapshot in the DB.
 
     Args:
         season_id: SweHockey season/tournament ID.
         db_dir: Path to the cache/database directory.
 
     Returns:
-        Sorted list of StandingsRow dataclasses.
+        Sorted list of StandingsRow dataclasses with movement set.
     """
     played = get_all_played_games(season_id, db_dir)
-    return calculate_standings_from_schedule(played)
+    standings = calculate_standings_from_schedule(played)
+
+    # Compute movement against previously saved standings.
+    prev_standings = load_standings(db_dir, season_id)
+    if prev_standings:
+        prev_rank_by_team = {r.team: r.rank for r in prev_standings}
+        standings = [
+            StandingsRow(
+                rank=r.rank,
+                team=r.team,
+                games_played=r.games_played,
+                w=r.w,
+                t=r.t,
+                l=r.l,
+                goals_for=r.goals_for,
+                goals_against=r.goals_against,
+                goal_difference=r.goal_difference,
+                tp=r.tp,
+                otw=r.otw,
+                otl=r.otl,
+                gwsw=r.gwsw,
+                gwsl=r.gwsl,
+                movement=prev_rank_by_team.get(r.team, r.rank) - r.rank,
+            )
+            for r in standings
+        ]
+
+    return standings
 
 
 def calculate_standings_from_schedule(entries: List[ScheduleEntry]) -> List[StandingsRow]:
