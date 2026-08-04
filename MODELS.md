@@ -179,11 +179,20 @@ One row from a season schedule page.
 |---|---|---|
 | `date` | `str` | Game date, `YYYY-MM-DD` |
 | `time` | `str` | Game time, `HH:MM` |
-| `game_result` | `str` | Score string if played, empty if not yet played |
+| `home_team` | `str` | Home team name |
+| `away_team` | `str` | Away team name |
+| `game_result` | `str` | Score string if played (e.g. `"2 - 3"`), empty if not yet played |
+| `periods` | `str` | Period breakdown string, e.g. `"(0-0, 1-1, 1-1, 0-1)"` |
 | `spectators` | `str` | Attendance figure as a string |
 | `venue` | `str` | Arena name |
-| `game_url` | `str` | Full URL to the game events page |
-| `round` | `str` | Round number as a string |
+| `game_url` | `str` | Full URL to the game events page (empty for unstarted seasons) |
+| `round` | `str` | Round number as a string (from page header, or empty if inferred by date) |
+
+Computed property (included in `to_dict` output):
+
+| Property | Type | Description |
+|---|---|---|
+| `overtime` | `str` | `"OT"` (4 periods), `"SO"` (5 periods), or `""` (regulation/unplayed) |
 
 Has `to_dict` for JSON serialisation.
 

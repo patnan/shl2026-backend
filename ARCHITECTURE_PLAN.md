@@ -39,50 +39,47 @@ This document describes a smart implementation plan for the requirements in [REQ
 
 ## Pollers
 
-### 1) Live Games Poller
+### Architecture: Schedule-Driven Polling
 
-Targets: active season game IDs.
+The schedule poller is the primary driver for all change detection. Instead of polling individual game pages separately, the schedule page is polled at dynamic intervals and used to detect score changes across all games simultaneously. Game detail pages are only fetched on-demand when a score change is detected (to get scorer details).
 
-Smart game polling:
-- Only polls games currently in progress.
-- Checks schedule date/time against current time with a 4-hour active window.
-- Games outside the active window are skipped until their scheduled time.
-
-Cadence:
-- Active (in progress): every 30 seconds.
-- Not started: skipped until active window begins.
-- Final: one or two confirmation polls, then stop.
-
-Method used:
-- [src/shl/game.py](src/shl/game.py) fetch_game(game_id, db_dir, force_reparse=False)
-
-Change detection:
-- Compare previous stored snapshot vs new snapshot via score/actions.
-- If score changed → emit `score_changed` domain event.
-- If game state changed → emit `game_state_changed` domain event.
-
-### 2) Schedule Poller
+### 1) Schedule Poller (Primary)
 
 Targets: season schedule IDs.
 
-Cadence:
-1. Normal: every 15 to 60 minutes.
-2. Near game windows: every 5 to 15 minutes.
+Dynamic cadence (adapts to game activity):
+- Live games today: every **30 seconds**
+- Game day, games not yet started: every **5 minutes**
+- No games today: every **15 minutes**
+
+On each tick:
+1. Fetch fresh schedule page.
+2. Compare previous vs new schedule entry scores.
+3. For each game with a score change:
+   - Fetch game detail page (on-demand) for scorer/assist info.
+   - Emit `score_changed` domain event with enriched payload.
+   - If game state changed to "Final Score", emit `game_state_changed` event.
+4. Recalculate standings from updated schedule.
+5. If standings changed, emit `standings_changed` domain event.
 
 Method used:
-- [src/shl/schedule.py](src/shl/schedule.py) fetch_schedule(season_id, db_dir, force_reparse=False)
+- [src/shl/schedule.py](src/shl/schedule.py) fetch_schedule(season_id, db_dir, force_reparse=True)
+- [src/shl/game.py](src/shl/game.py) fetch_game(game_id, db_dir, force_reparse=True) — on-demand
+- [src/shl/schedule.py](src/shl/schedule.py) get_standings(season_id, db_dir) — computed from schedule
 
-Smartness:
-- cache-first by default.
-- force_reparse for manual refresh.
+### 2) Game Targets
 
-### 3) Standings Poller
+Game targets exist in the database but are **not actively polled**. They are deferred (24h) and only serve as on-demand fetch targets triggered by the schedule poller when it detects a score change.
 
-Preferred trigger:
-1. Event-driven after game status/score transitions.
+### 3) Standings
 
-Fallback cadence:
-1. Every 5 to 15 minutes.
+Standings are **computed from schedule data** (not a separate poller). Recalculated on every schedule tick and compared with the previous value. No separate standings polling needed.
+
+### 4) Overview Standings Poller (Legacy/Validation)
+
+Fetches the SweHockey overview page standings table. Used for validation against the computed standings.
+
+Cadence: every 5 minutes.
 
 Method used:
 - [src/shl/standings.py](src/shl/standings.py) fetch_table(season_id, db_dir, force_reparse=False)
