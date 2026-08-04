@@ -34,9 +34,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SUCCESS_INTERVAL_SECONDS = {
     "game": 30,
-    "schedule": 60,
+    "schedule": 60,  # Default, overridden dynamically below.
     "standings": 5 * 60,
 }
+
+# Dynamic schedule intervals based on game activity.
+SCHEDULE_INTERVAL_LIVE_GAMES = 30       # Games in progress right now.
+SCHEDULE_INTERVAL_GAME_DAY = 5 * 60    # Game day but no games live yet / already ended.
+SCHEDULE_INTERVAL_NO_GAMES = 15 * 60   # No games today.
 
 DEFAULT_ERROR_BASE_INTERVAL_SECONDS = {
     "game": 30,
@@ -61,9 +66,82 @@ def _to_iso(value: datetime) -> str:
     return value.isoformat(timespec="seconds")
 
 
-def _compute_success_next_poll(target_type: str, now: datetime) -> str:
-    interval = DEFAULT_SUCCESS_INTERVAL_SECONDS.get(target_type, 60)
+def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optional[Path] = None, target_key: Optional[str] = None) -> str:
+    if target_type == "schedule" and cache_dir is not None and target_key is not None:
+        interval = _compute_schedule_interval(cache_dir, int(target_key), now)
+    else:
+        interval = DEFAULT_SUCCESS_INTERVAL_SECONDS.get(target_type, 60)
     return _to_iso(now + timedelta(seconds=interval))
+
+
+def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -> int:
+    """Determine schedule polling interval based on current game activity.
+
+    - Live games (started within active window): 30s
+    - Game day but no live games: 5 min
+    - No games today: 15 min
+    """
+    schedule = load_schedule(cache_dir, season_id)
+    if not schedule:
+        return SCHEDULE_INTERVAL_NO_GAMES
+
+    today_str = now.date().isoformat()
+    todays_games = [e for e in schedule if e.date == today_str]
+
+    if not todays_games:
+        return SCHEDULE_INTERVAL_NO_GAMES
+
+    # Check if any game is currently live (started but no final result).
+    has_live = False
+    for entry in todays_games:
+        if entry.game_result:
+            # Has a result — could be live score or final.
+            # If it has overtime info or the game detail shows Final Score,
+            # it's done. But from schedule alone, any result means activity.
+            # Check if there are also unfinished games.
+            continue
+        # No result yet — check if game has started based on time.
+        if entry.time:
+            try:
+                hour, minute = entry.time.split(":")[:2]
+                game_start = datetime(
+                    now.year, now.month, now.day,
+                    int(hour), int(minute), tzinfo=now.tzinfo,
+                )
+                if now >= game_start:
+                    has_live = True
+                    break
+            except (ValueError, IndexError):
+                pass
+
+    # Also consider games with results that are still updating (live scores).
+    # If any game today has a result but no periods (means it's in progress),
+    # or has < 3 periods filled, treat as live.
+    for entry in todays_games:
+        if entry.game_result and not entry.overtime:
+            # Has score but game might still be in progress.
+            # Count periods to check.
+            if entry.periods:
+                period_count = len(re.findall(r"\d+-\d+", entry.periods))
+                if period_count < 3:
+                    has_live = True
+                    break
+            else:
+                # Has result but no periods breakdown — likely in progress.
+                has_live = True
+                break
+
+    if has_live:
+        return SCHEDULE_INTERVAL_LIVE_GAMES
+
+    # Game day but all games either haven't started or are finished.
+    unfinished = [e for e in todays_games if not e.game_result]
+    if unfinished:
+        # Games scheduled today but not started yet.
+        return SCHEDULE_INTERVAL_GAME_DAY
+
+    # All today's games have results — day is done.
+    return SCHEDULE_INTERVAL_NO_GAMES
 
 
 def _apply_jitter(interval_seconds: int, jitter_ratio: float = BACKOFF_JITTER_RATIO) -> int:
@@ -445,7 +523,7 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
 
             _run_target(cache_dir, target_type, target_key)
             duration_ms = int((perf_counter() - started) * 1000)
-            next_poll_at = _compute_success_next_poll(target_type, now_value)
+            next_poll_at = _compute_success_next_poll(target_type, now_value, cache_dir, target_key)
             update_poll_success(cache_dir, target_id, duration_ms, next_poll_at)
             insert_domain_event(
                 cache_dir,
