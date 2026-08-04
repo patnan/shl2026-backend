@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
+import time
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from src.shl.schedule import (
     get_all_played_games,
@@ -17,6 +22,34 @@ from src.shl.schedule import (
 from src.shl.store import get_games_freshness, get_schedule_fetched_at
 from src.shl.store import get_game_fetched_at, load_game
 
+
+# ---------------------------------------------------------------------------
+# Rate limiter (in-memory, per-IP)
+# ---------------------------------------------------------------------------
+
+class _RateLimiter:
+    """Simple sliding-window rate limiter keyed by client IP."""
+
+    def __init__(self, requests_per_minute: int = 60) -> None:
+        self.requests_per_minute = requests_per_minute
+        self.window_seconds = 60.0
+        self._hits: Dict[str, list[float]] = defaultdict(list)
+
+    def is_allowed(self, client_ip: str) -> bool:
+        now = time.monotonic()
+        window_start = now - self.window_seconds
+        hits = self._hits[client_ip]
+        # Prune expired entries.
+        self._hits[client_ip] = [t for t in hits if t > window_start]
+        if len(self._hits[client_ip]) >= self.requests_per_minute:
+            return False
+        self._hits[client_ip].append(now)
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _serialize(value: Any) -> Any:
     if dataclasses.is_dataclass(value):
@@ -45,12 +78,48 @@ def _extract_game_ids(entries: list[Any]) -> list[int]:
     return ids
 
 
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
+
 def create_app(cache_dir: Path) -> FastAPI:
     app = FastAPI(
         title="SHL Data API",
         version="0.1.0",
         description="Read-only API over persisted SHL schedule, game metadata, and standings data.",
     )
+
+    # CORS — allowed origins configurable via env var (comma-separated).
+    # Defaults to permissive for development; set SHL_CORS_ORIGINS in production.
+    allowed_origins = os.environ.get("SHL_CORS_ORIGINS", "*").split(",")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in allowed_origins],
+        allow_methods=["GET"],
+        allow_headers=["*"],
+    )
+
+    # Rate limiting.
+    rate_limit = int(os.environ.get("SHL_RATE_LIMIT_PER_MINUTE", "60"))
+    limiter = _RateLimiter(requests_per_minute=rate_limit)
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        # Skip rate limiting for health checks.
+        if request.url.path == "/health":
+            return await call_next(request)
+
+        client_ip = request.client.host if request.client else "unknown"
+        if not limiter.is_allowed(client_ip):
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Try again later."},
+            )
+        return await call_next(request)
+
+    # ------------------------------------------------------------------
+    # Endpoints
+    # ------------------------------------------------------------------
 
     @app.get("/health")
     def health() -> Dict[str, str]:

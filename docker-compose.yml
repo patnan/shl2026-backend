@@ -17,6 +17,8 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 8000
+      SHL_CORS_ORIGINS: "*"
+      SHL_RATE_LIMIT_PER_MINUTE: "60"
     volumes:
       - ./cache:/app/cache
     mem_limit: 1g
