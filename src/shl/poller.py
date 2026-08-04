@@ -11,7 +11,7 @@ from time import sleep as _sleep
 from typing import Any, Dict, List, Optional
 
 from src.shl.game import fetch_game, compare_game_score_change
-from src.shl.schedule import fetch_schedule
+from src.shl.schedule import fetch_schedule, get_standings
 from src.shl.standings import fetch_table
 from src.shl.models import PollTarget, ScheduleEntry
 from src.shl.store import (
@@ -327,7 +327,34 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
         return
 
     if target_type == "schedule":
-        fetch_schedule(int(target_key), cache_dir)
+        season_id = int(target_key)
+        # Load previous standings before schedule update.
+        prev_standings = get_standings(season_id, cache_dir)
+
+        fetch_schedule(season_id, cache_dir, force_reparse=True)
+
+        # Recalculate standings after schedule update.
+        new_standings = get_standings(season_id, cache_dir)
+
+        # Detect changes.
+        if prev_standings and new_standings and prev_standings != new_standings:
+            insert_domain_event(
+                cache_dir,
+                "standings_changed",
+                f"season:{target_key}",
+                {
+                    "season_id": season_id,
+                    "standings": [
+                        {
+                            "rank": r.rank,
+                            "team": r.team,
+                            "games_played": r.games_played,
+                            "tp": r.tp,
+                        }
+                        for r in new_standings
+                    ],
+                },
+            )
         return
 
     if target_type == "standings":

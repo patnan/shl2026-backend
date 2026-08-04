@@ -53,12 +53,13 @@ def test_run_poller_tick_success_updates_state_and_writes_event(monkeypatch, tmp
 
     calls = {"fetch_schedule": 0}
 
-    def fake_fetch_schedule(season_id, db_dir):
+    def fake_fetch_schedule(season_id, db_dir, force_reparse=False):
         calls["fetch_schedule"] += 1
         assert season_id == 18263
         assert db_dir == tmp_path
 
     monkeypatch.setattr("src.shl.poller.fetch_schedule", fake_fetch_schedule)
+    monkeypatch.setattr("src.shl.poller.get_standings", lambda season_id, cache_dir: [])
 
     results = run_poller_tick(tmp_path, now=now)
 
