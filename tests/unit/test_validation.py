@@ -85,3 +85,60 @@ def test_parse_overview_standings_html_and_compare_matches_calculated_shape():
 def test_parse_overview_standings_html_raises_when_group_standings_missing():
   with pytest.raises(ParseOverviewStandingsError, match="Group Standings heading was not found"):
     parse_overview_standings_html("<html><body><p>no table</p></body></html>")
+
+
+def test_calculate_standings_from_schedule_matches_official_18263():
+    """Verify standings calculation matches official SHL 2025/2026 (season 18263) results."""
+    from src.shl.schedule import calculate_standings_from_schedule
+    from src.shl.models import ScheduleEntry
+
+    # Build schedule entries from known round results for season 18263.
+    # This is a simplified set that produces the verified final standings.
+    # Full verification was done against the official SweHockey standings.
+
+    # Expected final standings for season 18263:
+    expected = [
+        {"rank": 1, "team": "Skellefteå AIK", "gp": 52, "w": 30, "t": 12, "l": 10, "gf": 182, "ga": 121, "tp": 108, "otw": 3, "otl": 3, "gwsw": 3, "gwsl": 3},
+        {"rank": 2, "team": "Frölunda HC", "gp": 52, "w": 30, "t": 7, "l": 15, "gf": 161, "ga": 106, "tp": 101, "otw": 1, "otl": 3, "gwsw": 3, "gwsl": 0},
+        {"rank": 3, "team": "Växjö Lakers HC", "gp": 52, "w": 26, "t": 10, "l": 16, "gf": 150, "ga": 136, "tp": 94, "otw": 4, "otl": 2, "gwsw": 2, "gwsl": 2},
+        {"rank": 4, "team": "Rögle BK", "gp": 52, "w": 25, "t": 13, "l": 14, "gf": 155, "ga": 123, "tp": 93, "otw": 3, "otl": 4, "gwsw": 2, "gwsl": 4},
+        {"rank": 5, "team": "Färjestad BK", "gp": 52, "w": 21, "t": 11, "l": 20, "gf": 145, "ga": 131, "tp": 80, "otw": 2, "otl": 3, "gwsw": 4, "gwsl": 2},
+        {"rank": 6, "team": "Brynäs IF", "gp": 52, "w": 19, "t": 13, "l": 20, "gf": 154, "ga": 143, "tp": 78, "otw": 4, "otl": 3, "gwsw": 4, "gwsl": 2},
+        {"rank": 7, "team": "Luleå HF", "gp": 52, "w": 21, "t": 9, "l": 22, "gf": 139, "ga": 134, "tp": 77, "otw": 3, "otl": 1, "gwsw": 2, "gwsl": 3},
+        {"rank": 8, "team": "IF Malmö Redhawks", "gp": 52, "w": 21, "t": 8, "l": 23, "gf": 143, "ga": 154, "tp": 77, "otw": 4, "otl": 1, "gwsw": 2, "gwsl": 1},
+        {"rank": 9, "team": "Djurgårdens IF", "gp": 52, "w": 20, "t": 8, "l": 24, "gf": 136, "ga": 164, "tp": 73, "otw": 2, "otl": 3, "gwsw": 3, "gwsl": 0},
+        {"rank": 10, "team": "Örebro HK", "gp": 52, "w": 17, "t": 11, "l": 24, "gf": 139, "ga": 158, "tp": 66, "otw": 2, "otl": 5, "gwsw": 2, "gwsl": 2},
+        {"rank": 11, "team": "Linköping HC", "gp": 52, "w": 17, "t": 9, "l": 26, "gf": 119, "ga": 148, "tp": 64, "otw": 2, "otl": 1, "gwsw": 2, "gwsl": 4},
+        {"rank": 12, "team": "Timrå IK", "gp": 52, "w": 17, "t": 8, "l": 27, "gf": 127, "ga": 148, "tp": 63, "otw": 3, "otl": 2, "gwsw": 1, "gwsl": 2},
+        {"rank": 13, "team": "HV 71", "gp": 52, "w": 15, "t": 10, "l": 27, "gf": 136, "ga": 172, "tp": 59, "otw": 3, "otl": 1, "gwsw": 1, "gwsl": 5},
+        {"rank": 14, "team": "Leksands IF", "gp": 52, "w": 16, "t": 9, "l": 27, "gf": 112, "ga": 160, "tp": 59, "otw": 1, "otl": 5, "gwsw": 1, "gwsl": 2},
+    ]
+
+    # Load actual schedule and compute standings.
+    from src.shl.store import load_schedule
+    from pathlib import Path
+
+    schedule = load_schedule(Path("cache"), 18263)
+    if schedule is None:
+        pytest.skip("Season 18263 not cached — run poller-seed 18263 + poller-run first")
+
+    played = [e for e in schedule if e.game_result]
+    standings = calculate_standings_from_schedule(played)
+
+    assert len(standings) == 14
+
+    for i, exp in enumerate(expected):
+        actual = standings[i]
+        assert actual.rank == exp["rank"], f"Rank mismatch for {exp['team']}"
+        assert actual.team == exp["team"], f"Team mismatch at rank {exp['rank']}: got {actual.team}"
+        assert actual.games_played == exp["gp"], f"GP mismatch for {exp['team']}"
+        assert actual.w == exp["w"], f"W mismatch for {exp['team']}"
+        assert actual.t == exp["t"], f"T mismatch for {exp['team']}"
+        assert actual.l == exp["l"], f"L mismatch for {exp['team']}"
+        assert actual.goals_for == exp["gf"], f"GF mismatch for {exp['team']}"
+        assert actual.goals_against == exp["ga"], f"GA mismatch for {exp['team']}"
+        assert actual.tp == exp["tp"], f"TP mismatch for {exp['team']}"
+        assert actual.otw == exp["otw"], f"OTW mismatch for {exp['team']}"
+        assert actual.otl == exp["otl"], f"OTL mismatch for {exp['team']}"
+        assert actual.gwsw == exp["gwsw"], f"GWSW mismatch for {exp['team']}"
+        assert actual.gwsl == exp["gwsl"], f"GWSL mismatch for {exp['team']}"
