@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from src.shl.schedule import (
     get_all_played_games,
     get_games_for_date,
+    get_next_round,
     get_played_rounds,
     get_rounds,
     get_schedule,
@@ -172,6 +173,22 @@ def create_app(cache_dir: Path) -> FastAPI:
             "meta": {
                 "season_id": str(season_id),
                 "total_rounds": len(rounds),
+                "source_fetched_at": source_fetched_at,
+                **_meta(),
+            },
+        }
+
+    @app.get("/seasons/{season_id}/rounds/next")
+    def season_next_round(season_id: int) -> Dict[str, Any]:
+        next_round = get_next_round(season_id, cache_dir)
+        if next_round is None:
+            raise HTTPException(status_code=404, detail=f"No upcoming round found for season {season_id}")
+        source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+
+        return {
+            "data": {"round": next_round["round"], "games": _serialize(next_round["games"])},
+            "meta": {
+                "season_id": str(season_id),
                 "source_fetched_at": source_fetched_at,
                 **_meta(),
             },
