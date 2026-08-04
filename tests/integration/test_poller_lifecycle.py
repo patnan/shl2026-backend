@@ -17,7 +17,7 @@ def test_seed_then_tick_updates_poll_state_and_writes_completed_events(monkeypat
     now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
     # Seed schedule + standings targets without requiring schedule fetch.
-    seed_result = seed_season_targets(tmp_path, season_id=18263, include_games=False)
+    seed_result = seed_season_targets(tmp_path, season_id=18263)
     assert seed_result["total_targets"] == 2
 
     # Seed uses real current time; force deterministic due-state for this test timestamp.

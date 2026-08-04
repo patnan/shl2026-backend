@@ -168,79 +168,17 @@ def test_run_poller_worker_validates_parameters(tmp_path):
         run_poller_worker(tmp_path, max_ticks=0)
 
 
-def test_seed_season_targets_creates_schedule_standings_and_game_targets(monkeypatch, tmp_path):
-    from src.shl.models import ScheduleEntry
+def test_seed_season_targets_creates_schedule_and_standings(monkeypatch, tmp_path):
     from src.shl.poller import seed_season_targets
 
-    monkeypatch.setattr(
-        "src.shl.poller.fetch_schedule",
-        lambda season_id, cache_dir, force_reparse=False: [
-            ScheduleEntry(
-                        date="2025-09-16",
-                        time="19:00",
-                        home_team="Team A",
-                        away_team="Team B",
-                        game_result="",
-                        periods="",
-                        spectators="",
-                        venue="",
-                        game_url="https://stats.swehockey.se/Game/Events/1004308",
-                        round="1",
-                    ),
-            ScheduleEntry(
-                        date="2025-09-16",
-                        time="19:00",
-                        home_team="Team A",
-                        away_team="Team B",
-                        game_result="",
-                        periods="",
-                        spectators="",
-                        venue="",
-                        game_url="https://stats.swehockey.se/Game/Events/1004308",
-                        round="1",
-                    ),
-            ScheduleEntry(
-                        date="2025-09-16",
-                        time="19:00",
-                        home_team="Team A",
-                        away_team="Team B",
-                        game_result="",
-                        periods="",
-                        spectators="",
-                        venue="",
-                        game_url="https://stats.swehockey.se/Game/Events/1004309",
-                        round="1",
-                    ),
-        ],
-    )
-
-    result = seed_season_targets(tmp_path, season_id=18263, include_games=True)
+    result = seed_season_targets(tmp_path, season_id=18263)
 
     assert result["schedule_target"] == 1
     assert result["standings_target"] == 1
-    assert result["game_targets"] == 2
-    assert result["total_targets"] == 4
-
-    targets = list_poll_targets(tmp_path)
-    assert len(targets) == 4
-    assert {(t.target_type, t.target_key) for t in targets} == {
-        ("schedule", "18263"),
-        ("standings", "18263"),
-        ("game", "1004308"),
-        ("game", "1004309"),
-    }
-
-
-def test_seed_season_targets_can_skip_game_targets(monkeypatch, tmp_path):
-    from src.shl.poller import seed_season_targets
-
-    monkeypatch.setattr("src.shl.poller.fetch_schedule", lambda *args, **kwargs: pytest.fail("fetch_schedule should not be called"))
-
-    result = seed_season_targets(tmp_path, season_id=18263, include_games=False)
-    assert result["game_targets"] == 0
     assert result["total_targets"] == 2
 
     targets = list_poll_targets(tmp_path)
+    assert len(targets) == 2
     assert {(t.target_type, t.target_key) for t in targets} == {
         ("schedule", "18263"),
         ("standings", "18263"),
@@ -256,103 +194,3 @@ def test_compute_error_next_poll_uses_circuit_breaker_cooldown(monkeypatch):
     next_poll_at = _compute_error_next_poll("schedule", now, current_error_count=5)
     retry_seconds = int((datetime.fromisoformat(next_poll_at) - now).total_seconds())
     assert retry_seconds >= 20 * 60
-
-
-def test_game_target_skipped_when_not_active(monkeypatch, tmp_path):
-    """Game targets are skipped (deferred) when the game is not currently active."""
-    from src.shl.store import save_schedule
-    from src.shl.models import ScheduleEntry
-
-    now = datetime(2026, 9, 16, 12, 0, 0, tzinfo=timezone.utc)
-
-    # Save a schedule with a game that was yesterday (already finished).
-    save_schedule(tmp_path, 18263, [
-        ScheduleEntry(
-                    date="2026-09-15",
-                    time="19:00",
-                    home_team="Team A",
-                    away_team="Team B",
-                    game_result="3 - 2",
-                    periods="",
-                    spectators="8000",
-                    venue="Arena",
-                    game_url="https://stats.swehockey.se/Game/Events/1004308",
-                    round="1",
-                ),
-    ])
-
-    # Seed the game target.
-    upsert_poll_target(
-        tmp_path,
-        target_type="game",
-        target_key="1004308",
-        enabled=True,
-        next_poll_at=_iso(now - timedelta(seconds=1)),
-    )
-
-    # fetch_game should NOT be called.
-    monkeypatch.setattr("src.shl.poller.fetch_game", lambda *a, **kw: pytest.fail("fetch_game should not be called"))
-
-    results = run_poller_tick(tmp_path, now=now)
-    assert len(results) == 1
-    assert results[0]["status"] == "skipped"
-    assert results[0]["target_key"] == "1004308"
-
-
-def test_game_target_always_skipped(monkeypatch, tmp_path):
-    """Game targets are always skipped — schedule poller handles score detection."""
-    now = datetime(2026, 9, 16, 20, 0, 0, tzinfo=timezone.utc)
-
-    upsert_poll_target(
-        tmp_path,
-        target_type="game",
-        target_key="1004308",
-        enabled=True,
-        next_poll_at=_iso(now - timedelta(seconds=1)),
-    )
-
-    monkeypatch.setattr("src.shl.poller.fetch_game", lambda *a, **kw: pytest.fail("fetch_game should not be called directly"))
-
-    results = run_poller_tick(tmp_path, now=now)
-    assert len(results) == 1
-    assert results[0]["status"] == "skipped"
-
-
-def test_game_target_deferred_when_future(monkeypatch, tmp_path):
-    """Game targets scheduled for tomorrow are deferred until near game start."""
-    from src.shl.store import save_schedule
-    from src.shl.models import ScheduleEntry
-
-    now = datetime(2026, 9, 15, 12, 0, 0, tzinfo=timezone.utc)
-
-    save_schedule(tmp_path, 18263, [
-        ScheduleEntry(
-                    date="2026-09-16",
-                    time="19:00",
-                    home_team="Team A",
-                    away_team="Team B",
-                    game_result="",
-                    periods="",
-                    spectators="",
-                    venue="Arena",
-                    game_url="https://stats.swehockey.se/Game/Events/1004308",
-                    round="1",
-                ),
-    ])
-
-    upsert_poll_target(
-        tmp_path,
-        target_type="game",
-        target_key="1004308",
-        enabled=True,
-        next_poll_at=_iso(now - timedelta(seconds=1)),
-    )
-
-    monkeypatch.setattr("src.shl.poller.fetch_game", lambda *a, **kw: pytest.fail("fetch_game should not be called"))
-
-    results = run_poller_tick(tmp_path, now=now)
-    assert len(results) == 1
-    assert results[0]["status"] == "skipped"
-    # Should be deferred to near the game start time (2026-09-16T18:55).
-    deferred = datetime.fromisoformat(results[0]["next_poll_at"])
-    assert deferred.date() == datetime(2026, 9, 16).date()

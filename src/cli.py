@@ -150,7 +150,6 @@ def cmd_poller_seed(args: argparse.Namespace, cache_dir: Path) -> None:
     result = seed_season_targets(
         cache_dir,
         season_id=args.season_id,
-        include_games=not args.skip_games,
         force_reparse_schedule=args.force_reparse_schedule,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -207,7 +206,6 @@ def main() -> None:
     # poller seed
     p_seed = sub.add_parser("poller-seed", help="Seed poll targets for a season")
     p_seed.add_argument("season_id", type=int, help="Season/tournament id")
-    p_seed.add_argument("--skip-games", action="store_true", help="Seed only schedule and standings targets")
     p_seed.add_argument("--force-reparse-schedule", action="store_true", help="Force schedule refetch")
 
     # poller run
