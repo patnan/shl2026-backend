@@ -20,7 +20,6 @@ Dataclasses are defined in [src/shl/models.py](src/shl/models.py).
 
 Model documentation:
 - [MODELS.md](MODELS.md)
-- [MODELS.m](MODELS.m)
 
 Architecture and implementation planning:
 - [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md)
@@ -151,6 +150,33 @@ curl "http://127.0.0.1:8000/seasons/18263/rounds/played"
 curl "http://127.0.0.1:8000/seasons/18263/rounds/next"
 curl "http://127.0.0.1:8000/games/1004308"
 ```
+
+## Start scripts
+
+Convenience scripts for local development (require `.venv`):
+
+```bash
+# Start API server:
+./start_api.sh
+
+# Start poller (seeds + runs):
+SEASON_ID=18263 ./start_poller.sh
+
+# Start notification worker:
+./start_notifier.sh
+```
+
+### Season configuration
+
+The app operates per season. Set the season via `SEASON_ID` environment variable:
+
+| Context | How to set |
+|---------|-----------|
+| Start scripts | `SEASON_ID=18263 ./start_poller.sh` |
+| Docker Compose | Set in `.env` file or inline: `SEASON_ID=18263 docker compose up -d` |
+| Manual CLI | `python -m src.cli poller-seed 18263` |
+
+Default: `18263` (SHL 2025/2026 season).
 
 ## Python API usage
 
