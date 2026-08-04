@@ -113,14 +113,16 @@ def test_domain_event_mark_processed(monkeypatch, tmp_path):
 
     upsert_poll_target(
         tmp_path,
-        target_type="game",
-        target_key="1004840",
+        target_type="schedule",
+        target_key="18263",
         enabled=True,
         next_poll_at=_iso(now - timedelta(seconds=1)),
     )
 
-    # Run a successful tick for game target.
-    monkeypatch.setattr("src.shl.poller.fetch_game", lambda game_id, db_dir, force_reparse=False: None)
+    # Run a successful tick for schedule target.
+    monkeypatch.setattr("src.shl.poller.fetch_schedule", lambda season_id, db_dir, force_reparse=False: None)
+    monkeypatch.setattr("src.shl.poller.get_standings", lambda season_id, cache_dir: [])
+    monkeypatch.setattr("src.shl.poller.load_schedule", lambda cache_dir, season_id: [])
     run_poller_tick(tmp_path, now=now)
 
     events = list_unprocessed_domain_events(tmp_path)
@@ -297,28 +299,9 @@ def test_game_target_skipped_when_not_active(monkeypatch, tmp_path):
     assert results[0]["target_key"] == "1004308"
 
 
-def test_game_target_polled_when_active(monkeypatch, tmp_path):
-    """Game targets are polled when the game is currently in progress."""
-    from src.shl.store import save_schedule
-    from src.shl.models import ScheduleEntry
-
-    # Game starts at 19:00 today, now is 20:00 (within active window).
+def test_game_target_always_skipped(monkeypatch, tmp_path):
+    """Game targets are always skipped — schedule poller handles score detection."""
     now = datetime(2026, 9, 16, 20, 0, 0, tzinfo=timezone.utc)
-
-    save_schedule(tmp_path, 18263, [
-        ScheduleEntry(
-                    date="2026-09-16",
-                    time="19:00",
-                    home_team="Team A",
-                    away_team="Team B",
-                    game_result="",
-                    periods="",
-                    spectators="",
-                    venue="Arena",
-                    game_url="https://stats.swehockey.se/Game/Events/1004308",
-                    round="1",
-                ),
-    ])
 
     upsert_poll_target(
         tmp_path,
@@ -328,17 +311,11 @@ def test_game_target_polled_when_active(monkeypatch, tmp_path):
         next_poll_at=_iso(now - timedelta(seconds=1)),
     )
 
-    calls = {"fetch_game": 0}
-
-    def fake_fetch_game(game_id, db_dir, force_reparse=False):
-        calls["fetch_game"] += 1
-
-    monkeypatch.setattr("src.shl.poller.fetch_game", fake_fetch_game)
+    monkeypatch.setattr("src.shl.poller.fetch_game", lambda *a, **kw: pytest.fail("fetch_game should not be called directly"))
 
     results = run_poller_tick(tmp_path, now=now)
     assert len(results) == 1
-    assert results[0]["status"] == "ok"
-    assert calls["fetch_game"] == 1
+    assert results[0]["status"] == "skipped"
 
 
 def test_game_target_deferred_when_future(monkeypatch, tmp_path):

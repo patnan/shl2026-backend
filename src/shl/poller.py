@@ -281,62 +281,105 @@ def seed_season_targets(
 
 def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
     if target_type == "game":
+        # Game targets are now only fetched on-demand (triggered by schedule score change).
+        # Direct polling just refreshes the game detail page.
         game_id = int(target_key)
-        previous = load_game(cache_dir, game_id)
-        current = fetch_game(game_id, cache_dir, force_reparse=True)
-
-        if previous is not None and current is not None:
-            result = compare_game_score_change(previous, current)
-            if result.scored:
-                insert_domain_event(
-                    cache_dir,
-                    "score_changed",
-                    f"game:{target_key}",
-                    {
-                        "game_id": game_id,
-                        "score": result.score,
-                        "previous_score": result.previous_score,
-                        "teams_scored": [
-                            {
-                                "team": e.team,
-                                "goals_added": e.goals_added,
-                                "scorer": e.scorer,
-                                "scorer_players": e.scorer_players,
-                                "game_time": e.game_time,
-                            }
-                            for e in result.teams_scored
-                        ],
-                    },
-                )
-
-            # Detect state changes (e.g. game ended).
-            prev_state = previous.score.state
-            curr_state = current.score.state
-            if prev_state != curr_state and curr_state:
-                insert_domain_event(
-                    cache_dir,
-                    "game_state_changed",
-                    f"game:{target_key}",
-                    {
-                        "game_id": game_id,
-                        "previous_state": prev_state,
-                        "current_state": curr_state,
-                        "score": result.score,
-                    },
-                )
+        fetch_game(game_id, cache_dir, force_reparse=True)
         return
 
     if target_type == "schedule":
         season_id = int(target_key)
-        # Load previous standings before schedule update.
+
+        # Load previous schedule and standings.
+        prev_schedule = load_schedule(cache_dir, season_id) or []
         prev_standings = get_standings(season_id, cache_dir)
 
+        # Build lookup of previous scores by game_url.
+        prev_scores: Dict[str, str] = {}
+        for entry in prev_schedule:
+            if entry.game_url:
+                prev_scores[entry.game_url] = entry.game_result
+
+        # Fetch fresh schedule.
         fetch_schedule(season_id, cache_dir, force_reparse=True)
+        new_schedule = load_schedule(cache_dir, season_id) or []
 
-        # Recalculate standings after schedule update.
+        # Detect per-game score changes.
+        for entry in new_schedule:
+            if not entry.game_url or not entry.game_result:
+                continue
+            prev_result = prev_scores.get(entry.game_url, "")
+            if entry.game_result != prev_result:
+                # Score changed — extract game_id and fetch detail page.
+                game_id_match = re.search(r"/(\d+)$", entry.game_url)
+                if game_id_match:
+                    game_id = int(game_id_match.group(1))
+
+                    # Fetch game detail page to get scorer info.
+                    try:
+                        previous_game = load_game(cache_dir, game_id)
+                        current_game = fetch_game(game_id, cache_dir, force_reparse=True)
+
+                        # Build event payload.
+                        event_payload: Dict = {
+                            "game_id": game_id,
+                            "home_team": entry.home_team,
+                            "away_team": entry.away_team,
+                            "score": entry.game_result,
+                            "previous_score": prev_result,
+                            "overtime": entry.overtime,
+                            "teams_scored": [],
+                        }
+
+                        # Enrich with scorer details if we have both snapshots.
+                        if previous_game is not None and current_game is not None:
+                            result = compare_game_score_change(previous_game, current_game)
+                            if result.scored:
+                                event_payload["teams_scored"] = [
+                                    {
+                                        "team": e.team,
+                                        "goals_added": e.goals_added,
+                                        "scorer": e.scorer,
+                                        "scorer_players": e.scorer_players,
+                                        "game_time": e.game_time,
+                                    }
+                                    for e in result.teams_scored
+                                ]
+
+                        insert_domain_event(
+                            cache_dir,
+                            "score_changed",
+                            f"game:{game_id}",
+                            event_payload,
+                        )
+
+                        # Detect game ended (had no result before, now has one with overtime info or final).
+                        if not prev_result and entry.game_result:
+                            # Game just got its first result — it started or is in progress.
+                            pass
+                        if previous_game and current_game:
+                            prev_state = previous_game.score.state
+                            curr_state = current_game.score.state
+                            if prev_state != curr_state and curr_state == "Final Score":
+                                insert_domain_event(
+                                    cache_dir,
+                                    "game_state_changed",
+                                    f"game:{game_id}",
+                                    {
+                                        "game_id": game_id,
+                                        "home_team": entry.home_team,
+                                        "away_team": entry.away_team,
+                                        "previous_state": prev_state,
+                                        "current_state": curr_state,
+                                        "score": entry.game_result,
+                                        "overtime": entry.overtime,
+                                    },
+                                )
+                    except Exception as exc:
+                        logger.warning("Failed to fetch game detail for %d: %s", game_id, exc)
+
+        # Check standings changes.
         new_standings = get_standings(season_id, cache_dir)
-
-        # Detect changes.
         if prev_standings and new_standings and prev_standings != new_standings:
             insert_domain_event(
                 cache_dir,
@@ -382,23 +425,23 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
         started = perf_counter()
 
         try:
-            # Skip game targets that are not currently active.
+            # Game targets are not polled on their own schedule.
+            # The schedule poller fetches game details when it detects score changes.
             if target_type == "game":
-                should_poll, deferred = _is_game_active(cache_dir, int(target_key), now_value)
-                if not should_poll:
-                    duration_ms = int((perf_counter() - started) * 1000)
-                    update_poll_success(cache_dir, target_id, duration_ms, deferred)
-                    results.append({
-                        "target_id": target_id,
-                        "target_type": target_type,
-                        "target_key": target_key,
-                        "status": "skipped",
-                        "duration_ms": duration_ms,
-                        "next_poll_at": deferred,
-                        "due_age_seconds": due_age_seconds,
-                    })
-                    _log_result(results[-1])
-                    continue
+                duration_ms = int((perf_counter() - started) * 1000)
+                deferred = _to_iso(now_value + timedelta(hours=24))
+                update_poll_success(cache_dir, target_id, duration_ms, deferred)
+                results.append({
+                    "target_id": target_id,
+                    "target_type": target_type,
+                    "target_key": target_key,
+                    "status": "skipped",
+                    "duration_ms": duration_ms,
+                    "next_poll_at": deferred,
+                    "due_age_seconds": due_age_seconds,
+                })
+                _log_result(results[-1])
+                continue
 
             _run_target(cache_dir, target_type, target_key)
             duration_ms = int((perf_counter() - started) * 1000)
