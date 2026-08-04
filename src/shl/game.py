@@ -30,6 +30,22 @@ def _is_past_game_snapshot(game: Game) -> bool:
 
 
 def fetch_game(game_id: int, db_dir: Path, force_reparse: bool = False) -> Game:
+    """Fetch a game by ID, using cached data if available and the game is in the past.
+
+    If the game is not cached or is still in progress (today or future),
+    it will be scraped from SweHockey and saved to the database.
+
+    Args:
+        game_id: SweHockey game event ID.
+        db_dir: Path to the cache/database directory.
+        force_reparse: If True, always re-scrape regardless of cache state.
+
+    Returns:
+        The parsed Game dataclass.
+
+    Raises:
+        FetchGameError: If scraping or loading fails.
+    """
     try:
         if not force_reparse:
             cached = load_game(db_dir, game_id)
@@ -241,6 +257,21 @@ def _find_scoring_event_for_team(
 
 
 def compare_game_score_change(previous_game: Game, current_game: Game) -> ScoreChangeResult:
+    """Compare two snapshots of the same game and detect scoring changes.
+
+    Identifies which teams scored, how many goals were added, and attributes
+    goals to specific players when possible by analyzing action lists.
+
+    Args:
+        previous_game: The earlier game snapshot.
+        current_game: The later game snapshot.
+
+    Returns:
+        A ScoreChangeResult indicating whether scoring occurred and details.
+
+    Raises:
+        CompareGameScoreChangeError: If comparison logic fails.
+    """
     try:
         prev_score = _extract_score_pair(previous_game)
         curr_score = _extract_score_pair(current_game)

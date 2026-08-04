@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 from src.shl.helpers.extraction import fetch_html
 from src.shl.helpers.parsing import clean_text
@@ -21,6 +21,20 @@ class ParseOverviewStandingsError(RuntimeError):
 
 
 def parse_overview_standings_html(html: str) -> List[StandingsRow]:
+    """Parse standings from a SweHockey season overview HTML page.
+
+    Extracts the 'Group Standings' table and converts each row into a
+    StandingsRow dataclass.
+
+    Args:
+        html: Raw HTML string from the overview page.
+
+    Returns:
+        List of StandingsRow dataclasses parsed from the table.
+
+    Raises:
+        ParseOverviewStandingsError: If the table is missing or malformed.
+    """
     try:
         from bs4 import BeautifulSoup
 
@@ -84,6 +98,21 @@ def parse_overview_standings_html(html: str) -> List[StandingsRow]:
 
 
 def calculate_standings(games: List[Game]) -> List[StandingsRow]:
+    """Calculate league standings from a list of played games.
+
+    Applies SHL scoring rules: 3 points for regulation win, 2 for OT/SO win,
+    1 for OT/SO loss or unfinished games. Results are sorted by points,
+    goal difference, and goals for.
+
+    Args:
+        games: List of Game dataclasses to compute standings from.
+
+    Returns:
+        Sorted list of StandingsRow dataclasses with rank assigned.
+
+    Raises:
+        CalculateStandingsError: If input is invalid or computation fails.
+    """
     try:
         standings: Dict[str, Dict] = {}
 
@@ -208,6 +237,22 @@ def calculate_standings(games: List[Game]) -> List[StandingsRow]:
 
 
 def fetch_table(season_id: int, db_dir: Path, force_reparse: bool = False) -> List[StandingsRow]:
+    """Fetch standings from the SweHockey overview page, using cache if available.
+
+    Scrapes and parses the overview page on cache miss or when force_reparse
+    is True, and persists the result to the database.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+        force_reparse: If True, always re-scrape regardless of cache state.
+
+    Returns:
+        List of StandingsRow dataclasses.
+
+    Raises:
+        FetchTableError: If fetching or parsing fails.
+    """
     try:
         if not force_reparse:
             cached = load_standings(db_dir, season_id)

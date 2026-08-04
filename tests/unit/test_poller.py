@@ -35,9 +35,9 @@ def test_upsert_poll_target_and_list_due(tmp_path):
     )
 
     due = list_due_poll_targets(tmp_path, now_iso=_iso(now))
-    assert [item["id"] for item in due] == [due_id]
-    assert due[0]["target_type"] == "schedule"
-    assert due[0]["target_key"] == "18263"
+    assert [item.id for item in due] == [due_id]
+    assert due[0].target_type == "schedule"
+    assert due[0].target_key == "18263"
 
 
 def test_run_poller_tick_success_updates_state_and_writes_event(monkeypatch, tmp_path):
@@ -72,8 +72,8 @@ def test_run_poller_tick_success_updates_state_and_writes_event(monkeypatch, tmp
 
     events = list_unprocessed_domain_events(tmp_path)
     assert len(events) == 1
-    assert events[0]["event_type"] == "poll_completed"
-    assert events[0]["aggregate_key"] == "schedule:18263"
+    assert events[0].event_type == "poll_completed"
+    assert events[0].aggregate_key == "schedule:18263"
 
 
 def test_run_poller_tick_failure_updates_state_and_writes_event(monkeypatch, tmp_path):
@@ -103,8 +103,8 @@ def test_run_poller_tick_failure_updates_state_and_writes_event(monkeypatch, tmp
 
     events = list_unprocessed_domain_events(tmp_path)
     assert len(events) == 1
-    assert events[0]["event_type"] == "poll_failed"
-    assert events[0]["aggregate_key"] == "standings:18263"
+    assert events[0].event_type == "poll_failed"
+    assert events[0].aggregate_key == "standings:18263"
 
 
 def test_domain_event_mark_processed(monkeypatch, tmp_path):
@@ -125,7 +125,7 @@ def test_domain_event_mark_processed(monkeypatch, tmp_path):
     events = list_unprocessed_domain_events(tmp_path)
     assert len(events) == 1
 
-    mark_domain_event_processed(tmp_path, events[0]["id"], processed_at=_iso(now))
+    mark_domain_event_processed(tmp_path, events[0].id, processed_at=_iso(now))
     remaining = list_unprocessed_domain_events(tmp_path)
     assert remaining == []
 
@@ -211,7 +211,7 @@ def test_seed_season_targets_creates_schedule_standings_and_game_targets(monkeyp
 
     targets = list_poll_targets(tmp_path)
     assert len(targets) == 4
-    assert {(t["target_type"], t["target_key"]) for t in targets} == {
+    assert {(t.target_type, t.target_key) for t in targets} == {
         ("schedule", "18263"),
         ("standings", "18263"),
         ("game", "1004308"),
@@ -229,7 +229,7 @@ def test_seed_season_targets_can_skip_game_targets(monkeypatch, tmp_path):
     assert result["total_targets"] == 2
 
     targets = list_poll_targets(tmp_path)
-    assert {(t["target_type"], t["target_key"]) for t in targets} == {
+    assert {(t.target_type, t.target_key) for t in targets} == {
         ("schedule", "18263"),
         ("standings", "18263"),
     }

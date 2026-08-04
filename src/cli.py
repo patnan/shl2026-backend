@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import csv
 import json
 from pathlib import Path
 
@@ -16,7 +15,7 @@ from src.shl.helpers.extraction import fetch_html
 from src.shl.poller import run_poller_worker, seed_season_targets
 
 
-CSV_COLUMNS = [
+STANDINGS_COLUMNS = [
     ("RK", "rank"),
     ("Team", "team"),
     ("GP", "games_played"),
@@ -39,44 +38,39 @@ def resolve_output_path(cache_dir: Path, path_value: str) -> Path:
     return cache_dir / path
 
 
-def resolve_input_path(cache_dir: Path, path_value: str) -> Path:
-    path = Path(path_value)
-    if path.is_absolute() or path.exists():
-        return path
-    cached = cache_dir / path
-    return cached if cached.exists() else path
-
-
-def format_standings_row(entry: dict) -> dict:
+def format_standings_row(row) -> dict:
     return {
-        "rank": entry["rank"],
-        "team": entry["team"],
-        "games_played": entry["games_played"],
-        "w": entry["w"],
-        "t": entry["t"],
-        "l": entry["l"],
-        "gf_ga_gd": f"{entry['goals_for']}:{entry['goals_against']} ({entry['goal_difference']})",
-        "tp": entry["tp"],
-        "otw": entry["otw"],
-        "otl": entry["otl"],
-        "gwsw": entry["gwsw"],
-        "gwsl": entry["gwsl"],
+        "rank": row.rank,
+        "team": row.team,
+        "games_played": row.games_played,
+        "w": row.w,
+        "t": row.t,
+        "l": row.l,
+        "gf_ga_gd": f"{row.goals_for}:{row.goals_against} ({row.goal_difference})",
+        "tp": row.tp,
+        "otw": row.otw,
+        "otl": row.otl,
+        "gwsw": row.gwsw,
+        "gwsl": row.gwsl,
     }
 
 
-def print_standings_table(standings: list[dict]) -> None:
+def print_standings_table(standings) -> None:
     rows = [format_standings_row(entry) for entry in standings]
-    column_widths = {}
+    if not rows:
+        print("No standings to display.")
+        return
 
-    for header, key in CSV_COLUMNS:
+    column_widths = {}
+    for header, key in STANDINGS_COLUMNS:
         value_width = max((len(str(row[key])) for row in rows), default=0)
         column_widths[key] = max(len(header), value_width)
 
     header_line = "  ".join(
         header.ljust(column_widths[key]) if key == "team" else header.rjust(column_widths[key])
-        for header, key in CSV_COLUMNS
+        for header, key in STANDINGS_COLUMNS
     )
-    separator_line = "  ".join("-" * column_widths[key] for _, key in CSV_COLUMNS)
+    separator_line = "  ".join("-" * column_widths[key] for _, key in STANDINGS_COLUMNS)
 
     print(header_line)
     print(separator_line)
@@ -84,24 +78,15 @@ def print_standings_table(standings: list[dict]) -> None:
         print(
             "  ".join(
                 str(row[key]).ljust(column_widths[key]) if key == "team" else str(row[key]).rjust(column_widths[key])
-                for _, key in CSV_COLUMNS
+                for _, key in STANDINGS_COLUMNS
             )
         )
 
 
-def write_standings_csv(standings: list[dict], output_path: Path) -> None:
-    rows = [format_standings_row(entry) for entry in standings]
-    with output_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=[header for header, _ in CSV_COLUMNS])
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({header: row[key] for header, key in CSV_COLUMNS})
-
-
 def cmd_scrape(args: argparse.Namespace, cache_dir: Path) -> None:
     if args.game_id is not None:
-        result = extract_game_by_id(args.game_id)
-        print(json.dumps(result, indent=2, ensure_ascii=False))
+        game = extract_game_by_id(args.game_id)
+        print(json.dumps(game.to_dict(), indent=2, ensure_ascii=False))
         return
 
     if not args.listing_url:
@@ -110,41 +95,19 @@ def cmd_scrape(args: argparse.Namespace, cache_dir: Path) -> None:
 
     if args.date:
         games = extract_games_from_listing_by_date(args.listing_url, args.date)
-        output_path = resolve_output_path(cache_dir, args.output or "games_by_date.json")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(games, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"Date: {args.date}")
-        print(f"Games found: {len(games)}")
-        print(f"Saved JSON to: {output_path}")
-        for index, game in enumerate(games, start=1):
-            g, s = game.get("game", {}), game.get("score", {})
-            print(f"{index}. {g.get('date_time')} | {g.get('home_team')} - {g.get('away_team')} | {s.get('current')} | {g.get('arena')}")
+        print(f"Date: {args.date} — {len(games)} game(s)")
+        for i, game in enumerate(games, start=1):
+            print(f"  {i}. {game.game.date_time} | {game.game.home_team} - {game.game.away_team} | {game.score.current} | {game.game.arena}")
         return
 
     def on_progress(index: int, total: int, game_url: str) -> None:
         print(f"[{index}/{total}] scraping {game_url}", flush=True)
 
     games = extract_games_from_listing_with_progress(args.listing_url, progress_callback=on_progress)
+    print(f"\nScraped {len(games)} games from: {args.listing_url}")
 
-    if args.games_output:
-        games_path = resolve_output_path(cache_dir, args.games_output)
-        games_path.parent.mkdir(parents=True, exist_ok=True)
-        games_path.write_text(json.dumps(games, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"Saved raw game JSON to: {games_path}")
-
-    if args.standings or not args.games_output:
-        standings = calculate_standings(games)
-        output_path = resolve_output_path(cache_dir, args.output or "standings.json")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(standings, ensure_ascii=False, indent=2), encoding="utf-8")
-        print_standings_table(standings)
-        if args.csv_output:
-            csv_path = resolve_output_path(cache_dir, args.csv_output)
-            csv_path.parent.mkdir(parents=True, exist_ok=True)
-            write_standings_csv(standings, csv_path)
-            print(f"Saved standings CSV to: {csv_path}")
-        print(f"Scraped {len(games)} games from: {args.listing_url}")
-        print(f"Saved standings JSON to: {output_path}")
+    standings = calculate_standings(games)
+    print_standings_table(standings)
 
 
 def cmd_validate(args: argparse.Namespace, cache_dir: Path) -> None:
@@ -168,13 +131,6 @@ def cmd_compare(args: argparse.Namespace, cache_dir: Path) -> None:
     previous_game = Game.from_dict(json.loads(Path(args.previous_file).read_text(encoding="utf-8")))
     current_game = Game.from_dict(json.loads(Path(args.current_file).read_text(encoding="utf-8")))
     result = compare_game_score_change(previous_game, current_game)
-
-    if args.output:
-        out = resolve_output_path(cache_dir, args.output)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"Saved comparison JSON to: {out}")
-
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
 
 
@@ -211,29 +167,24 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # scrape
-    p_scrape = sub.add_parser("scrape", help="Scrape games from a listing page")
-    p_scrape.add_argument("listing_url", nargs="?", help="Listing page URL containing /Game/Events/<id> links")
+    p_scrape = sub.add_parser("scrape", help="Scrape and display games from a listing page")
+    p_scrape.add_argument("listing_url", nargs="?", help="Listing page URL")
     p_scrape.add_argument("--game-id", type=int, help="Extract a single game by id")
-    p_scrape.add_argument("--date", help="Filter to a specific date in YYYY-MM-DD format")
-    p_scrape.add_argument("--output", help="Output JSON file path")
-    p_scrape.add_argument("--games-output", help="Save raw scraped games to this JSON path")
-    p_scrape.add_argument("--standings", action="store_true", help="Compute and print standings (default when no --games-output)")
-    p_scrape.add_argument("--csv-output", help="Save standings as CSV to this path")
+    p_scrape.add_argument("--date", help="Filter to a specific date (YYYY-MM-DD)")
 
     # validate
     p_val = sub.add_parser("validate", help="Fetch and preview overview page for a season")
     p_val.add_argument("season_id", nargs="?", type=int, default=18263, help="Season/tournament id")
     p_val.add_argument("--output", help="Output path for raw HTML")
-    p_val.add_argument("--preview-chars", type=int, default=1000, help="Characters of HTML preview to print (default: 1000)")
+    p_val.add_argument("--preview-chars", type=int, default=1000, help="Characters of HTML preview to print")
 
     # compare
     p_cmp = sub.add_parser("compare", help="Compare two game JSON snapshots for score changes")
     p_cmp.add_argument("previous_file", help="Path to previous game JSON file")
     p_cmp.add_argument("current_file", help="Path to current game JSON file")
-    p_cmp.add_argument("--output", help="Output path for comparison result JSON")
 
     # serve
-    p_srv = sub.add_parser("serve", help="Run REST API server over persisted DB data")
+    p_srv = sub.add_parser("serve", help="Run REST API server")
     p_srv.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
     p_srv.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
     p_srv.add_argument("--reload", action="store_true", help="Enable auto-reload (development)")
@@ -242,10 +193,10 @@ def main() -> None:
     p_seed = sub.add_parser("poller-seed", help="Seed poll targets for a season")
     p_seed.add_argument("season_id", type=int, help="Season/tournament id")
     p_seed.add_argument("--skip-games", action="store_true", help="Seed only schedule and standings targets")
-    p_seed.add_argument("--force-reparse-schedule", action="store_true", help="Force schedule refetch when seeding game targets")
+    p_seed.add_argument("--force-reparse-schedule", action="store_true", help="Force schedule refetch")
 
     # poller run
-    p_run = sub.add_parser("poller-run", help="Run single-process poller worker loop")
+    p_run = sub.add_parser("poller-run", help="Run poller worker loop")
     p_run.add_argument("--tick-interval", type=float, default=5.0, help="Seconds between ticks (default: 5.0)")
     p_run.add_argument("--max-ticks", type=int, help="Stop after N ticks (default: run forever)")
 

@@ -1,209 +1,224 @@
 import dataclasses
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
-from src.shl.models import Game, ScheduleEntry, StandingsRow
+from src.shl.models import (
+    DomainEvent,
+    Game,
+    PollTarget,
+    ScheduleEntry,
+    StandingsRow,
+)
 
-
-def cache_db_path(cache_dir: Path) -> Path:
-    return cache_dir / "cache.db"
+_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS games (
+    game_id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS standings (
+    season_id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS schedule (
+    season_id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS poll_targets (
+    id INTEGER PRIMARY KEY,
+    target_type TEXT NOT NULL,
+    target_key TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(target_type, target_key)
+);
+CREATE TABLE IF NOT EXISTS poll_state (
+    target_id INTEGER PRIMARY KEY,
+    last_success_at TEXT,
+    last_error_at TEXT,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    next_poll_at TEXT,
+    last_duration_ms INTEGER,
+    FOREIGN KEY(target_id) REFERENCES poll_targets(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS domain_events (
+    id INTEGER PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    aggregate_key TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    processed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_poll_targets_enabled ON poll_targets(enabled);
+CREATE INDEX IF NOT EXISTS idx_poll_state_next_poll_at ON poll_state(next_poll_at);
+CREATE INDEX IF NOT EXISTS idx_domain_events_processed_at ON domain_events(processed_at);
+CREATE INDEX IF NOT EXISTS idx_domain_events_created_at ON domain_events(created_at);
+"""
 
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _connect(cache_dir: Path) -> sqlite3.Connection:
-    db_path = cache_db_path(cache_dir)
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS games (
-            game_id INTEGER PRIMARY KEY,
-            data TEXT NOT NULL,
-            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS standings (
-            season_id INTEGER PRIMARY KEY,
-            data TEXT NOT NULL,
-            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS schedule (
-            season_id INTEGER PRIMARY KEY,
-            data TEXT NOT NULL,
-            fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-    """)
+class Store:
+    """Thread-safe SQLite store with WAL mode and single schema initialization."""
 
-    # Phase 1 Step 1: poller control schema.
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS poll_targets (
-            id INTEGER PRIMARY KEY,
-            target_type TEXT NOT NULL,
-            target_key TEXT NOT NULL,
-            enabled INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(target_type, target_key)
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS poll_state (
-            target_id INTEGER PRIMARY KEY,
-            last_success_at TEXT,
-            last_error_at TEXT,
-            error_count INTEGER NOT NULL DEFAULT 0,
-            next_poll_at TEXT,
-            last_duration_ms INTEGER,
-            FOREIGN KEY(target_id) REFERENCES poll_targets(id) ON DELETE CASCADE
-        )
-    """)
+    def __init__(self, cache_dir: Path) -> None:
+        self._db_path = cache_dir / "cache.db"
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._local = threading.local()
+        # Initialize schema once on the creating thread's connection.
+        conn = self._get_conn()
+        conn.executescript(_SCHEMA_SQL)
 
-    # Phase 1 Step 1: outbox/event schema.
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS domain_events (
-            id INTEGER PRIMARY KEY,
-            event_type TEXT NOT NULL,
-            aggregate_key TEXT NOT NULL,
-            payload_json TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            processed_at TEXT
-        )
-    """)
+    def _get_conn(self) -> sqlite3.Connection:
+        """Return a per-thread connection (created lazily)."""
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(str(self._db_path), timeout=10)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            self._local.conn = conn
+        return conn
 
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_poll_targets_enabled ON poll_targets(enabled)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_poll_state_next_poll_at ON poll_state(next_poll_at)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_domain_events_processed_at ON domain_events(processed_at)")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_domain_events_created_at ON domain_events(created_at)")
-    conn.commit()
-    return conn
+    # ------------------------------------------------------------------
+    # Games
+    # ------------------------------------------------------------------
 
+    def load_game(self, game_id: int) -> Optional[Game]:
+        row = self._get_conn().execute(
+            "SELECT data FROM games WHERE game_id = ?", (game_id,)
+        ).fetchone()
+        return Game.from_dict(json.loads(row[0])) if row else None
 
-def load_game(cache_dir: Path, game_id: int) -> Optional[Game]:
-    with _connect(cache_dir) as conn:
-        row = conn.execute("SELECT data FROM games WHERE game_id = ?", (game_id,)).fetchone()
-    return Game.from_dict(json.loads(row[0])) if row else None
+    def load_games_batch(self, game_ids: List[int]) -> List[Game]:
+        if not game_ids:
+            return []
+        placeholders = ",".join("?" for _ in game_ids)
+        rows = self._get_conn().execute(
+            f"SELECT data FROM games WHERE game_id IN ({placeholders})",
+            tuple(game_ids),
+        ).fetchall()
+        return [Game.from_dict(json.loads(row[0])) for row in rows]
 
+    def get_game_fetched_at(self, game_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM games WHERE game_id = ?", (game_id,)
+        ).fetchone()
+        return row[0] if row else None
 
-def get_game_fetched_at(cache_dir: Path, game_id: int) -> Optional[str]:
-    with _connect(cache_dir) as conn:
-        row = conn.execute("SELECT fetched_at FROM games WHERE game_id = ?", (game_id,)).fetchone()
-    return row[0] if row else None
-
-
-def save_game(cache_dir: Path, game_id: int, game: Game) -> None:
-    with _connect(cache_dir) as conn:
+    def save_game(self, game_id: int, game: Game) -> None:
+        conn = self._get_conn()
         conn.execute(
-            "INSERT OR REPLACE INTO games (game_id, data, fetched_at) VALUES (?, ?, datetime('now'))",
-            (game_id, json.dumps(dataclasses.asdict(game), ensure_ascii=False)),
+            "INSERT OR REPLACE INTO games (game_id, data, fetched_at) VALUES (?, ?, ?)",
+            (game_id, json.dumps(dataclasses.asdict(game), ensure_ascii=False), _utc_now_iso()),
         )
+        conn.commit()
 
-
-def load_standings(cache_dir: Path, season_id: int) -> Optional[List[StandingsRow]]:
-    with _connect(cache_dir) as conn:
-        row = conn.execute("SELECT data FROM standings WHERE season_id = ?", (season_id,)).fetchone()
-    return [StandingsRow.from_dict(e) for e in json.loads(row[0])] if row else None
-
-
-def get_standings_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    with _connect(cache_dir) as conn:
-        row = conn.execute("SELECT fetched_at FROM standings WHERE season_id = ?", (season_id,)).fetchone()
-    return row[0] if row else None
-
-
-def save_standings(cache_dir: Path, season_id: int, standings: List[StandingsRow]) -> None:
-    with _connect(cache_dir) as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO standings (season_id, data, fetched_at) VALUES (?, ?, datetime('now'))",
-            (season_id, json.dumps([dataclasses.asdict(s) for s in standings], ensure_ascii=False)),
-        )
-
-
-def load_schedule(cache_dir: Path, season_id: int) -> Optional[List[ScheduleEntry]]:
-    with _connect(cache_dir) as conn:
-        row = conn.execute("SELECT data FROM schedule WHERE season_id = ?", (season_id,)).fetchone()
-    return [ScheduleEntry.from_dict(e) for e in json.loads(row[0])] if row else None
-
-
-def get_schedule_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    with _connect(cache_dir) as conn:
-        row = conn.execute("SELECT fetched_at FROM schedule WHERE season_id = ?", (season_id,)).fetchone()
-    return row[0] if row else None
-
-
-def get_games_freshness(cache_dir: Path, game_ids: List[int]) -> Dict[str, Optional[Any]]:
-    if not game_ids:
-        return {
-            "requested_game_count": 0,
-            "cached_game_count": 0,
-            "latest_fetched_at": None,
-            "oldest_fetched_at": None,
-        }
-
-    placeholders = ",".join("?" for _ in game_ids)
-    with _connect(cache_dir) as conn:
-        row = conn.execute(
-            f"""
-            SELECT COUNT(*), MAX(fetched_at), MIN(fetched_at)
-            FROM games
-            WHERE game_id IN ({placeholders})
-            """,
+    def get_games_freshness(self, game_ids: List[int]) -> dict:
+        if not game_ids:
+            return {
+                "requested_game_count": 0,
+                "cached_game_count": 0,
+                "latest_fetched_at": None,
+                "oldest_fetched_at": None,
+            }
+        placeholders = ",".join("?" for _ in game_ids)
+        row = self._get_conn().execute(
+            f"SELECT COUNT(*), MAX(fetched_at), MIN(fetched_at) FROM games WHERE game_id IN ({placeholders})",
             tuple(game_ids),
         ).fetchone()
+        return {
+            "requested_game_count": len(game_ids),
+            "cached_game_count": int(row[0] or 0),
+            "latest_fetched_at": row[1],
+            "oldest_fetched_at": row[2],
+        }
 
-    return {
-        "requested_game_count": len(game_ids),
-        "cached_game_count": int(row[0] or 0),
-        "latest_fetched_at": row[1],
-        "oldest_fetched_at": row[2],
-    }
+    # ------------------------------------------------------------------
+    # Standings
+    # ------------------------------------------------------------------
 
+    def load_standings(self, season_id: int) -> Optional[List[StandingsRow]]:
+        row = self._get_conn().execute(
+            "SELECT data FROM standings WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return [StandingsRow.from_dict(e) for e in json.loads(row[0])] if row else None
 
-def save_schedule(cache_dir: Path, season_id: int, schedule: List[ScheduleEntry]) -> None:
-    with _connect(cache_dir) as conn:
+    def get_standings_fetched_at(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM standings WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_standings(self, season_id: int, standings: List[StandingsRow]) -> None:
+        conn = self._get_conn()
         conn.execute(
-            "INSERT OR REPLACE INTO schedule (season_id, data, fetched_at) VALUES (?, ?, datetime('now'))",
-            (season_id, json.dumps([dataclasses.asdict(e) for e in schedule], ensure_ascii=False)),
+            "INSERT OR REPLACE INTO standings (season_id, data, fetched_at) VALUES (?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(s) for s in standings], ensure_ascii=False), _utc_now_iso()),
         )
+        conn.commit()
 
+    # ------------------------------------------------------------------
+    # Schedule
+    # ------------------------------------------------------------------
 
-def upsert_poll_target(
-    cache_dir: Path,
-    target_type: str,
-    target_key: str,
-    enabled: bool = True,
-    next_poll_at: Optional[str] = None,
-) -> int:
-    now = _utc_now_iso()
-    with _connect(cache_dir) as conn:
+    def load_schedule(self, season_id: int) -> Optional[List[ScheduleEntry]]:
+        row = self._get_conn().execute(
+            "SELECT data FROM schedule WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return [ScheduleEntry.from_dict(e) for e in json.loads(row[0])] if row else None
+
+    def get_schedule_fetched_at(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM schedule WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_schedule(self, season_id: int, schedule: List[ScheduleEntry]) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO schedule (season_id, data, fetched_at) VALUES (?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(e) for e in schedule], ensure_ascii=False), _utc_now_iso()),
+        )
+        conn.commit()
+
+    # ------------------------------------------------------------------
+    # Poll targets
+    # ------------------------------------------------------------------
+
+    def upsert_poll_target(
+        self,
+        target_type: str,
+        target_key: str,
+        enabled: bool = True,
+        next_poll_at: Optional[str] = None,
+    ) -> int:
+        now = _utc_now_iso()
+        conn = self._get_conn()
         row = conn.execute(
             "SELECT id FROM poll_targets WHERE target_type = ? AND target_key = ?",
             (target_type, target_key),
         ).fetchone()
 
         if row is None:
-            conn.execute(
-                """
-                INSERT INTO poll_targets (target_type, target_key, enabled, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
+            cursor = conn.execute(
+                "INSERT INTO poll_targets (target_type, target_key, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (target_type, target_key, 1 if enabled else 0, now, now),
             )
-            target_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+            target_id = cursor.lastrowid
             conn.execute(
-                """
-                INSERT OR REPLACE INTO poll_state (target_id, next_poll_at)
-                VALUES (?, ?)
-                """,
+                "INSERT OR REPLACE INTO poll_state (target_id, next_poll_at) VALUES (?, ?)",
                 (target_id, next_poll_at or now),
             )
+            conn.commit()
             return target_id
 
         target_id = int(row[0])
@@ -220,24 +235,18 @@ def upsert_poll_target(
                 """,
                 (target_id, next_poll_at),
             )
+        conn.commit()
         return target_id
 
-
-def list_due_poll_targets(cache_dir: Path, now_iso: Optional[str] = None) -> List[Dict[str, Any]]:
-    now_value = now_iso or _utc_now_iso()
-    with _connect(cache_dir) as conn:
-        rows = conn.execute(
+    def list_due_poll_targets(self, now_iso: Optional[str] = None) -> List[PollTarget]:
+        now_value = now_iso or _utc_now_iso()
+        rows = self._get_conn().execute(
             """
             SELECT
-                t.id,
-                t.target_type,
-                t.target_key,
-                t.enabled,
-                s.last_success_at,
-                s.last_error_at,
-                s.error_count,
-                s.next_poll_at,
-                s.last_duration_ms
+                t.id, t.target_type, t.target_key, t.enabled,
+                t.created_at, t.updated_at,
+                s.last_success_at, s.last_error_at, s.error_count,
+                s.next_poll_at, s.last_duration_ms
             FROM poll_targets t
             LEFT JOIN poll_state s ON s.target_id = t.id
             WHERE t.enabled = 1
@@ -246,56 +255,31 @@ def list_due_poll_targets(cache_dir: Path, now_iso: Optional[str] = None) -> Lis
             """,
             (now_value,),
         ).fetchall()
+        return [self._row_to_poll_target(row) for row in rows]
 
-    result: List[Dict[str, Any]] = []
-    for row in rows:
-        result.append({
-            "id": int(row[0]),
-            "target_type": row[1],
-            "target_key": row[2],
-            "enabled": bool(row[3]),
-            "last_success_at": row[4],
-            "last_error_at": row[5],
-            "error_count": int(row[6] or 0),
-            "next_poll_at": row[7],
-            "last_duration_ms": row[8],
-        })
-    return result
+    def list_poll_targets(
+        self,
+        target_type: Optional[str] = None,
+        enabled_only: bool = False,
+    ) -> List[PollTarget]:
+        where_clauses = []
+        params: list = []
 
+        if target_type is not None:
+            where_clauses.append("t.target_type = ?")
+            params.append(target_type)
+        if enabled_only:
+            where_clauses.append("t.enabled = 1")
 
-def list_poll_targets(
-    cache_dir: Path,
-    target_type: Optional[str] = None,
-    enabled_only: bool = False,
-) -> List[Dict[str, Any]]:
-    where_clauses = []
-    params: List[Any] = []
+        where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-    if target_type is not None:
-        where_clauses.append("t.target_type = ?")
-        params.append(target_type)
-    if enabled_only:
-        where_clauses.append("t.enabled = 1")
-
-    where_sql = ""
-    if where_clauses:
-        where_sql = "WHERE " + " AND ".join(where_clauses)
-
-    with _connect(cache_dir) as conn:
-        rows = conn.execute(
+        rows = self._get_conn().execute(
             f"""
             SELECT
-                t.id,
-                t.target_type,
-                t.target_key,
-                t.enabled,
-                t.created_at,
-                t.updated_at,
-                s.last_success_at,
-                s.last_error_at,
-                s.error_count,
-                s.next_poll_at,
-                s.last_duration_ms
+                t.id, t.target_type, t.target_key, t.enabled,
+                t.created_at, t.updated_at,
+                s.last_success_at, s.last_error_at, s.error_count,
+                s.next_poll_at, s.last_duration_ms
             FROM poll_targets t
             LEFT JOIN poll_state s ON s.target_id = t.id
             {where_sql}
@@ -303,28 +287,11 @@ def list_poll_targets(
             """,
             tuple(params),
         ).fetchall()
+        return [self._row_to_poll_target(row) for row in rows]
 
-    targets: List[Dict[str, Any]] = []
-    for row in rows:
-        targets.append({
-            "id": int(row[0]),
-            "target_type": row[1],
-            "target_key": row[2],
-            "enabled": bool(row[3]),
-            "created_at": row[4],
-            "updated_at": row[5],
-            "last_success_at": row[6],
-            "last_error_at": row[7],
-            "error_count": int(row[8] or 0),
-            "next_poll_at": row[9],
-            "last_duration_ms": row[10],
-        })
-    return targets
-
-
-def update_poll_success(cache_dir: Path, target_id: int, duration_ms: int, next_poll_at: str) -> None:
-    now = _utc_now_iso()
-    with _connect(cache_dir) as conn:
+    def update_poll_success(self, target_id: int, duration_ms: int, next_poll_at: str) -> None:
+        now = _utc_now_iso()
+        conn = self._get_conn()
         conn.execute(
             """
             INSERT INTO poll_state (target_id, last_success_at, last_error_at, error_count, next_poll_at, last_duration_ms)
@@ -338,12 +305,14 @@ def update_poll_success(cache_dir: Path, target_id: int, duration_ms: int, next_
             """,
             (target_id, now, next_poll_at, duration_ms),
         )
+        conn.commit()
 
-
-def update_poll_error(cache_dir: Path, target_id: int, duration_ms: int, next_poll_at: str) -> int:
-    now = _utc_now_iso()
-    with _connect(cache_dir) as conn:
-        row = conn.execute("SELECT error_count FROM poll_state WHERE target_id = ?", (target_id,)).fetchone()
+    def update_poll_error(self, target_id: int, duration_ms: int, next_poll_at: str) -> int:
+        now = _utc_now_iso()
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT error_count FROM poll_state WHERE target_id = ?", (target_id,)
+        ).fetchone()
         previous_error_count = int(row[0]) if row and row[0] is not None else 0
         new_error_count = previous_error_count + 1
         conn.execute(
@@ -358,21 +327,24 @@ def update_poll_error(cache_dir: Path, target_id: int, duration_ms: int, next_po
             """,
             (target_id, now, new_error_count, next_poll_at, duration_ms),
         )
-    return new_error_count
+        conn.commit()
+        return new_error_count
 
+    # ------------------------------------------------------------------
+    # Domain events
+    # ------------------------------------------------------------------
 
-def insert_domain_event(cache_dir: Path, event_type: str, aggregate_key: str, payload: Dict[str, Any]) -> int:
-    with _connect(cache_dir) as conn:
-        conn.execute(
+    def insert_domain_event(self, event_type: str, aggregate_key: str, payload: dict) -> int:
+        conn = self._get_conn()
+        cursor = conn.execute(
             "INSERT INTO domain_events (event_type, aggregate_key, payload_json) VALUES (?, ?, ?)",
             (event_type, aggregate_key, json.dumps(payload, ensure_ascii=False)),
         )
-        return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        conn.commit()
+        return cursor.lastrowid
 
-
-def list_unprocessed_domain_events(cache_dir: Path, limit: int = 100) -> List[Dict[str, Any]]:
-    with _connect(cache_dir) as conn:
-        rows = conn.execute(
+    def list_unprocessed_domain_events(self, limit: int = 100) -> List[DomainEvent]:
+        rows = self._get_conn().execute(
             """
             SELECT id, event_type, aggregate_key, payload_json, created_at, processed_at
             FROM domain_events
@@ -382,23 +354,143 @@ def list_unprocessed_domain_events(cache_dir: Path, limit: int = 100) -> List[Di
             """,
             (limit,),
         ).fetchall()
+        return [
+            DomainEvent(
+                id=int(row[0]),
+                event_type=row[1],
+                aggregate_key=row[2],
+                payload=json.loads(row[3]),
+                created_at=row[4],
+                processed_at=row[5],
+            )
+            for row in rows
+        ]
 
-    events: List[Dict[str, Any]] = []
-    for row in rows:
-        events.append({
-            "id": int(row[0]),
-            "event_type": row[1],
-            "aggregate_key": row[2],
-            "payload": json.loads(row[3]),
-            "created_at": row[4],
-            "processed_at": row[5],
-        })
-    return events
-
-
-def mark_domain_event_processed(cache_dir: Path, event_id: int, processed_at: Optional[str] = None) -> None:
-    with _connect(cache_dir) as conn:
+    def mark_domain_event_processed(self, event_id: int, processed_at: Optional[str] = None) -> None:
+        conn = self._get_conn()
         conn.execute(
             "UPDATE domain_events SET processed_at = ? WHERE id = ?",
             (processed_at or _utc_now_iso(), event_id),
         )
+        conn.commit()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _row_to_poll_target(row) -> PollTarget:
+        return PollTarget(
+            id=int(row[0]),
+            target_type=row[1],
+            target_key=row[2],
+            enabled=bool(row[3]),
+            created_at=row[4],
+            updated_at=row[5],
+            last_success_at=row[6],
+            last_error_at=row[7],
+            error_count=int(row[8] or 0),
+            next_poll_at=row[9],
+            last_duration_ms=row[10],
+        )
+
+
+# ------------------------------------------------------------------
+# Module-level convenience functions (backward compatibility)
+# ------------------------------------------------------------------
+# These are used by consumers that pass cache_dir. They create a
+# short-lived Store per call. For performance, consumers should
+# hold a Store instance and call methods directly.
+
+def _store(cache_dir: Path) -> Store:
+    return Store(cache_dir)
+
+
+def load_game(cache_dir: Path, game_id: int) -> Optional[Game]:
+    return _store(cache_dir).load_game(game_id)
+
+
+def load_games_batch(cache_dir: Path, game_ids: List[int]) -> List[Game]:
+    return _store(cache_dir).load_games_batch(game_ids)
+
+
+def get_game_fetched_at(cache_dir: Path, game_id: int) -> Optional[str]:
+    return _store(cache_dir).get_game_fetched_at(game_id)
+
+
+def save_game(cache_dir: Path, game_id: int, game: Game) -> None:
+    _store(cache_dir).save_game(game_id, game)
+
+
+def get_games_freshness(cache_dir: Path, game_ids: List[int]) -> dict:
+    return _store(cache_dir).get_games_freshness(game_ids)
+
+
+def load_standings(cache_dir: Path, season_id: int) -> Optional[List[StandingsRow]]:
+    return _store(cache_dir).load_standings(season_id)
+
+
+def get_standings_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_standings_fetched_at(season_id)
+
+
+def save_standings(cache_dir: Path, season_id: int, standings: List[StandingsRow]) -> None:
+    _store(cache_dir).save_standings(season_id, standings)
+
+
+def load_schedule(cache_dir: Path, season_id: int) -> Optional[List[ScheduleEntry]]:
+    return _store(cache_dir).load_schedule(season_id)
+
+
+def get_schedule_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_schedule_fetched_at(season_id)
+
+
+def save_schedule(cache_dir: Path, season_id: int, schedule: List[ScheduleEntry]) -> None:
+    _store(cache_dir).save_schedule(season_id, schedule)
+
+
+def upsert_poll_target(
+    cache_dir: Path,
+    target_type: str,
+    target_key: str,
+    enabled: bool = True,
+    next_poll_at: Optional[str] = None,
+) -> int:
+    return _store(cache_dir).upsert_poll_target(target_type, target_key, enabled, next_poll_at)
+
+
+def list_due_poll_targets(cache_dir: Path, now_iso: Optional[str] = None) -> List[PollTarget]:
+    return _store(cache_dir).list_due_poll_targets(now_iso)
+
+
+def list_poll_targets(
+    cache_dir: Path,
+    target_type: Optional[str] = None,
+    enabled_only: bool = False,
+) -> List[PollTarget]:
+    return _store(cache_dir).list_poll_targets(target_type, enabled_only)
+
+
+def update_poll_success(cache_dir: Path, target_id: int, duration_ms: int, next_poll_at: str) -> None:
+    _store(cache_dir).update_poll_success(target_id, duration_ms, next_poll_at)
+
+
+def update_poll_error(cache_dir: Path, target_id: int, duration_ms: int, next_poll_at: str) -> int:
+    return _store(cache_dir).update_poll_error(target_id, duration_ms, next_poll_at)
+
+
+def insert_domain_event(cache_dir: Path, event_type: str, aggregate_key: str, payload: dict) -> int:
+    return _store(cache_dir).insert_domain_event(event_type, aggregate_key, payload)
+
+
+def list_unprocessed_domain_events(cache_dir: Path, limit: int = 100) -> List[DomainEvent]:
+    return _store(cache_dir).list_unprocessed_domain_events(limit)
+
+
+def mark_domain_event_processed(cache_dir: Path, event_id: int, processed_at: Optional[str] = None) -> None:
+    _store(cache_dir).mark_domain_event_processed(event_id, processed_at)
+
+
+def cache_db_path(cache_dir: Path) -> Path:
+    return cache_dir / "cache.db"

@@ -4,13 +4,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.cli import main
+from src.shl.models import Game
 
 
-FAKE_GAME = {
+FAKE_GAME_DICT = {
     "game": {"home_team": "Brynäs IF", "away_team": "Luleå HF", "is_overtime": False, "is_shootout": False},
     "score": {"current": "3-2", "home_score": 3, "away_score": 2, "periods": ["1-0", "1-1", "1-1"], "current_period": 3, "state": "Final Score"},
     "actions": [],
 }
+
+FAKE_GAME = Game.from_dict(FAKE_GAME_DICT)
 
 
 def test_scrape_game_id_prints_json(capsys, monkeypatch):

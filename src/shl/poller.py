@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 from src.shl.game import fetch_game
 from src.shl.schedule import fetch_schedule
 from src.shl.standings import fetch_table
+from src.shl.models import PollTarget
 from src.shl.store import (
     insert_domain_event,
     list_due_poll_targets,
@@ -211,14 +212,13 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
     results: List[Dict] = []
 
     for target in due_targets:
-        target_id = int(target["id"])
-        target_type = str(target["target_type"])
-        target_key = str(target["target_key"])
-        error_count = int(target.get("error_count", 0) or 0)
+        target_id = target.id
+        target_type = target.target_type
+        target_key = target.target_key
+        error_count = target.error_count
         due_age_seconds = 0
-        next_poll_at_value = target.get("next_poll_at")
-        if next_poll_at_value:
-            due_age_seconds = _due_age_seconds(now_value, str(next_poll_at_value))
+        if target.next_poll_at:
+            due_age_seconds = _due_age_seconds(now_value, target.next_poll_at)
         started = perf_counter()
 
         try:

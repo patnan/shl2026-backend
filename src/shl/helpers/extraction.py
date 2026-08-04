@@ -263,6 +263,17 @@ def extract_game(url: str) -> Game:
 
 
 def extract_game_by_id(game_id: int) -> Game:
+    """Scrape and parse a single game page by its SweHockey event ID.
+
+    Args:
+        game_id: Positive integer SweHockey game event ID.
+
+    Returns:
+        Parsed Game dataclass.
+
+    Raises:
+        ExtractGameError: If the ID is invalid or scraping fails.
+    """
     try:
         normalized_id = int(game_id)
         if normalized_id <= 0:
@@ -289,6 +300,21 @@ def extract_games_from_listing_with_progress(
     listing_url: str,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
 ) -> List[Game]:
+    """Scrape all games from a schedule listing page with optional progress reporting.
+
+    Parses the listing page for game URLs, then scrapes each one sequentially.
+
+    Args:
+        listing_url: URL of the SweHockey schedule/results page.
+        progress_callback: Optional function called with (index, total, game_url)
+            before each game is scraped.
+
+    Returns:
+        List of parsed Game dataclasses.
+
+    Raises:
+        ExtractGamesFromListingWithProgressError: If any game fails to scrape.
+    """
     try:
         schedule_games = extract_schedule_games(listing_url)
         game_urls = [entry.game_url for entry in schedule_games if entry.game_url]
@@ -320,6 +346,18 @@ def extract_games_from_listing_with_progress(
 
 
 def extract_games_from_listing_by_date(listing_url: str, game_date: str) -> List[Game]:
+    """Scrape games from a listing page filtered to a specific date.
+
+    Args:
+        listing_url: URL of the SweHockey schedule/results page.
+        game_date: Date string (YYYY-MM-DD) to filter schedule entries by.
+
+    Returns:
+        List of parsed Game dataclasses for the given date (empty if none match).
+
+    Raises:
+        ExtractGamesFromListingByDateError: If scraping fails.
+    """
     try:
         schedule_games = extract_schedule_games(listing_url)
         game_urls = [entry.game_url for entry in schedule_games if entry.date == game_date and entry.game_url]

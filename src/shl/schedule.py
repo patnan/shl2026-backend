@@ -6,7 +6,7 @@ from src.shl.helpers.extraction import (
     extract_schedule_games,
 )
 from src.shl.models import ScheduleEntry, StandingsRow
-from src.shl.store import save_schedule, load_schedule, load_game
+from src.shl.store import save_schedule, load_schedule, load_games_batch
 from src.shl.standings import calculate_standings
 
 
@@ -23,6 +23,22 @@ class GetAllPlayedGamesError(RuntimeError):
 
 
 def fetch_schedule(season_id: int, db_dir: Path, force_reparse: bool = False) -> List[ScheduleEntry]:
+    """Fetch the season schedule, using cached data if available.
+
+    Scrapes the SweHockey schedule page on cache miss or when force_reparse is True,
+    and persists the result to the database.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+        force_reparse: If True, always re-scrape regardless of cache state.
+
+    Returns:
+        List of ScheduleEntry dataclasses for the season.
+
+    Raises:
+        FetchScheduleError: If scraping or loading fails.
+    """
     try:
         if not force_reparse:
             cached = load_schedule(db_dir, season_id)
@@ -38,6 +54,19 @@ def fetch_schedule(season_id: int, db_dir: Path, force_reparse: bool = False) ->
 
 
 def get_games_for_date(season_id: int, game_date: str, db_dir: Path) -> List[ScheduleEntry]:
+    """Return schedule entries matching a specific date from the cached schedule.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        game_date: Date string (YYYY-MM-DD) to filter by.
+        db_dir: Path to the cache/database directory.
+
+    Returns:
+        List of matching ScheduleEntry dataclasses (empty if no schedule cached).
+
+    Raises:
+        GetGamesForDateError: If loading or filtering fails.
+    """
     try:
         schedule = load_schedule(db_dir, season_id)
         if schedule is None:
@@ -50,6 +79,18 @@ def get_games_for_date(season_id: int, game_date: str, db_dir: Path) -> List[Sch
 
 
 def get_all_played_games(season_id: int, db_dir: Path) -> List[ScheduleEntry]:
+    """Return all schedule entries that have a recorded result.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+
+    Returns:
+        List of ScheduleEntry dataclasses with non-empty game_result.
+
+    Raises:
+        GetAllPlayedGamesError: If loading fails.
+    """
     try:
         schedule = load_schedule(db_dir, season_id)
         if schedule is None:
@@ -60,17 +101,30 @@ def get_all_played_games(season_id: int, db_dir: Path) -> List[ScheduleEntry]:
 
 
 def get_schedule(season_id: int, db_dir: Path) -> Optional[List[ScheduleEntry]]:
+    """Load the cached schedule for a season, or None if not yet fetched."""
     return load_schedule(db_dir, season_id)
 
 
 def get_standings(season_id: int, db_dir: Path) -> List[StandingsRow]:
+    """Compute standings from all played games in the cached schedule.
+
+    Loads all games referenced by the schedule in a single batch query
+    and calculates the standings table.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+
+    Returns:
+        Sorted list of StandingsRow dataclasses.
+    """
     played = get_all_played_games(season_id, db_dir)
     game_ids = [
         int(m.group(1))
         for entry in played
         if (m := re.search(r"/(\d+)$", entry.game_url))
     ]
-    games = [g for game_id in game_ids if (g := load_game(db_dir, game_id)) is not None]
+    games = load_games_batch(db_dir, game_ids)
     return calculate_standings(games)
 
 

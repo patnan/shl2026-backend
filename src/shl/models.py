@@ -316,3 +316,28 @@ class ScoreChangeResult:
 
     def to_dict(self) -> Dict:
         return dataclasses.asdict(self)
+
+
+@dataclass(frozen=True)
+class PollTarget:
+    id: int
+    target_type: str
+    target_key: str
+    enabled: bool
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    last_success_at: Optional[str] = None
+    last_error_at: Optional[str] = None
+    error_count: int = 0
+    next_poll_at: Optional[str] = None
+    last_duration_ms: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class DomainEvent:
+    id: int
+    event_type: str
+    aggregate_key: str
+    payload: Dict
+    created_at: Optional[str] = None
+    processed_at: Optional[str] = None
