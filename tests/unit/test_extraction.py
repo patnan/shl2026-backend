@@ -321,9 +321,11 @@ def test_extract_schedule_games_from_listing_html_parses_expected_fields():
     <tr><td colspan="8">Round 1</td></tr>
     <tr>
       <td>2025-09-13</td>
+      <td>2025-09-1315:15</td>
       <td>15:15</td>
       <td>Brynäs IF - Växjö Lakers HC</td>
-      <td>4 - 7 (2-2, 2-3, 0-2)</td>
+      <td>4 - 7</td>
+      <td>(2-2, 2-3, 0-2)</td>
       <td>7909</td>
       <td>Monitor ERP Arena</td>
       <td><a href="/Game/Events/1004308">Match</a></td>
@@ -340,7 +342,7 @@ def test_extract_schedule_games_from_listing_html_parses_expected_fields():
     g = games[0]
     assert g.date == "2025-09-13"
     assert g.time == "15:15"
-    assert g.game_result == "4 - 7 (2-2, 2-3, 0-2)"
+    assert g.game_result == "4 - 7"
     assert g.venue == "Monitor ERP Arena"
     assert g.game_url == "https://stats.swehockey.se/Game/Events/1004308"
     assert g.round == "1"
@@ -353,18 +355,22 @@ def test_extract_schedule_games_from_listing_html_keeps_grouped_rows_without_rep
     <tr><td colspan="8">Round 3</td></tr>
     <tr>
       <td>2025-09-20</td>
+      <td>2025-09-2015:15</td>
       <td>15:15</td>
       <td>Team A - Team B</td>
-      <td>2 - 1 (1-1, 1-0, 0-0)</td>
+      <td>2 - 1</td>
+      <td>(1-1, 1-0, 0-0)</td>
       <td>5000</td>
       <td>Arena A</td>
       <td><a href="/Game/Events/1005001">Match</a></td>
     </tr>
     <tr>
       <td></td>
+      <td></td>
       <td>18:00</td>
       <td>Team C - Team D</td>
-      <td>3 - 2 (0-1, 2-1, 1-0)</td>
+      <td>3 - 2</td>
+      <td>(0-1, 2-1, 1-0)</td>
       <td>6200</td>
       <td>Arena B</td>
       <td><a href="/Game/Events/1005002">Match</a></td>
@@ -391,9 +397,11 @@ def test_extract_schedule_games_from_listing_html_deduplicates_same_game_url():
     <tr><td colspan="8">Round 4</td></tr>
     <tr>
       <td>2025-09-22</td>
+      <td>2025-09-2219:00</td>
       <td>19:00</td>
       <td>Team A - Team B</td>
-      <td>2 - 0 (1-0, 1-0, 0-0)</td>
+      <td>2 - 0</td>
+      <td>(1-0, 1-0, 0-0)</td>
       <td>5000</td>
       <td>Arena A</td>
       <td><a href="/Game/Events/1005100">Match</a></td>
@@ -401,7 +409,9 @@ def test_extract_schedule_games_from_listing_html_deduplicates_same_game_url():
     <tr>
       <td></td>
       <td></td>
+      <td></td>
       <td>Duplicate row with same game link</td>
+      <td></td>
       <td></td>
       <td></td>
       <td></td>

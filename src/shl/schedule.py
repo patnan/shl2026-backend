@@ -109,6 +109,10 @@ def get_schedule(season_id: int, db_dir: Path) -> Optional[List[ScheduleEntry]]:
 def get_rounds(season_id: int, db_dir: Path) -> List[Dict]:
     """Group the cached schedule into rounds with their contained games.
 
+    Rounds are determined by the 'round' field in the schedule entries.
+    If no round info is available, rounds are inferred by date (all games
+    on the same date belong to the same round, numbered sequentially).
+
     Args:
         season_id: SweHockey season/tournament ID.
         db_dir: Path to the cache/database directory.
@@ -121,21 +125,38 @@ def get_rounds(season_id: int, db_dir: Path) -> List[Dict]:
     if schedule is None:
         return []
 
-    rounds_order: List[str] = []
-    rounds_map: Dict[str, List[ScheduleEntry]] = {}
+    # Check if explicit round info exists.
+    has_rounds = any(entry.round for entry in schedule)
 
+    if has_rounds:
+        rounds_order: List[str] = []
+        rounds_map: Dict[str, List[ScheduleEntry]] = {}
+        for entry in schedule:
+            round_key = entry.round or ""
+            if round_key not in rounds_map:
+                rounds_order.append(round_key)
+                rounds_map[round_key] = []
+            rounds_map[round_key].append(entry)
+        return [{"round": r, "games": rounds_map[r]} for r in rounds_order]
+
+    # Infer rounds from dates: each unique date = one round, numbered sequentially.
+    dates_order: List[str] = []
+    dates_map: Dict[str, List[ScheduleEntry]] = {}
     for entry in schedule:
-        round_key = entry.round or ""
-        if round_key not in rounds_map:
-            rounds_order.append(round_key)
-            rounds_map[round_key] = []
-        rounds_map[round_key].append(entry)
+        d = entry.date
+        if d not in dates_map:
+            dates_order.append(d)
+            dates_map[d] = []
+        dates_map[d].append(entry)
 
-    return [{"round": r, "games": rounds_map[r]} for r in rounds_order]
+    return [{"round": str(i), "games": dates_map[d]} for i, d in enumerate(dates_order, start=1)]
 
 
 def get_played_rounds(season_id: int, db_dir: Path) -> List[Dict]:
     """Group only played games (those with a result) into rounds.
+
+    Uses the same round logic as get_rounds (explicit round field or
+    date-based inference), then filters to only include entries with results.
 
     Args:
         season_id: SweHockey season/tournament ID.
@@ -146,27 +167,20 @@ def get_played_rounds(season_id: int, db_dir: Path) -> List[Dict]:
         containing only entries with a game_result. Rounds with no played games
         are excluded. Empty list if no schedule cached.
     """
-    schedule = load_schedule(db_dir, season_id)
-    if schedule is None:
-        return []
-
-    rounds_order: List[str] = []
-    rounds_map: Dict[str, List[ScheduleEntry]] = {}
-
-    for entry in schedule:
-        if not entry.game_result:
-            continue
-        round_key = entry.round or ""
-        if round_key not in rounds_map:
-            rounds_order.append(round_key)
-            rounds_map[round_key] = []
-        rounds_map[round_key].append(entry)
-
-    return [{"round": r, "games": rounds_map[r]} for r in rounds_order]
+    all_rounds = get_rounds(season_id, db_dir)
+    result = []
+    for r in all_rounds:
+        played = [e for e in r["games"] if e.game_result]
+        if played:
+            result.append({"round": r["round"], "games": played})
+    return result
 
 
 def get_next_round(season_id: int, db_dir: Path) -> Optional[Dict]:
     """Get the next round to be played (first round with any unplayed game).
+
+    Uses the same round logic as get_rounds (explicit round field or
+    date-based inference).
 
     Args:
         season_id: SweHockey season/tournament ID.
@@ -176,25 +190,10 @@ def get_next_round(season_id: int, db_dir: Path) -> Optional[Dict]:
         Dict with 'round' (str) and 'games' (List[ScheduleEntry]) for the
         next unplayed round, or None if all rounds are complete or no schedule cached.
     """
-    schedule = load_schedule(db_dir, season_id)
-    if schedule is None:
-        return None
-
-    rounds_order: List[str] = []
-    rounds_map: Dict[str, List[ScheduleEntry]] = {}
-
-    for entry in schedule:
-        round_key = entry.round or ""
-        if round_key not in rounds_map:
-            rounds_order.append(round_key)
-            rounds_map[round_key] = []
-        rounds_map[round_key].append(entry)
-
-    for r in rounds_order:
-        games = rounds_map[r]
-        if any(not entry.game_result for entry in games):
-            return {"round": r, "games": games}
-
+    all_rounds = get_rounds(season_id, db_dir)
+    for r in all_rounds:
+        if any(not entry.game_result for entry in r["games"]):
+            return r
     return None
 
 

@@ -192,33 +192,50 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
 
             time_text = re.sub(r"\s+", " ", cells[1].get_text(" ", strip=True)).strip() if len(cells) > 1 else ""
             time_match = re.search(r"\b\d{1,2}:\d{2}\b", time_text)
+            if not time_match and len(cells) > 2:
+                time_text = re.sub(r"\s+", " ", cells[2].get_text(" ", strip=True)).strip()
+                time_match = re.search(r"\b\d{1,2}:\d{2}\b", time_text)
 
             game_link = row.find("a", href=re.compile(r"/Game/Events/\d+"))
-            if game_link is None:
-                continue
 
-            href = game_link.get("href", "").strip()
-            game_match = re.search(r"/Game/Events/\d+", href)
-            if game_match is None:
+            game_url = ""
+            if game_link is not None:
+                href = game_link.get("href", "").strip()
+                game_match = re.search(r"/Game/Events/\d+", href)
+                if game_match is not None:
+                    game_url = urljoin(base_url, game_match.group(0))
+                    if game_url in seen_game_urls:
+                        continue
+                    seen_game_urls.add(game_url)
+
+            # Require either a game link or a teams cell with " - " separator.
+            teams_cell = ""
+            if len(cells) > 3:
+                teams_cell = re.sub(r"\s+", " ", cells[3].get_text(" ", strip=True)).strip()
+            if not game_url and not re.search(r"\S\s*-\s*\S", teams_cell):
                 continue
-            game_url = urljoin(base_url, game_match.group(0))
-            if game_url in seen_game_urls:
-                continue
-            seen_game_urls.add(game_url)
 
             game_result = ""
-            if len(cells) > 3:
-                game_result = re.sub(r"\s+", " ", cells[3].get_text(" ", strip=True)).strip()
+            if len(cells) > 4:
+                result_text = re.sub(r"\s+", " ", cells[4].get_text(" ", strip=True)).strip()
+                if re.search(r"^\d{1,2}\s*-\s*\d{1,2}", result_text):
+                    game_result = result_text
             if not game_result:
-                result_match = re.search(r"\d+\s*-\s*\d+(?:\s*\([^)]*\))?", row_text)
-                game_result = result_match.group(0).replace(" ", "") if result_match else ""
+                # Look for score pattern in row text but exclude date patterns.
+                result_match = re.search(r"(?<!\d{4}-)\b(\d{1,2})\s*-\s*(\d{1,2})(?:\s*\([^)]*\))?", row_text)
+                if result_match and not re.match(r"\d{4}", result_match.group(0)):
+                    game_result = result_match.group(0).replace(" ", "")
 
             spectators = ""
-            if len(cells) > 4:
-                spectators = re.sub(r"\s+", " ", cells[4].get_text(" ", strip=True)).strip()
+            if len(cells) > 6:
+                spec_text = re.sub(r"\s+", " ", cells[6].get_text(" ", strip=True)).strip()
+                if re.search(r"\d+", spec_text):
+                    spectators = spec_text
 
             venue = ""
-            if len(cells) > 5:
+            if len(cells) > 7:
+                venue = re.sub(r"\s+", " ", cells[7].get_text(" ", strip=True)).strip()
+            elif len(cells) > 5:
                 venue = re.sub(r"\s+", " ", cells[5].get_text(" ", strip=True)).strip()
 
             schedule_games.append(ScheduleEntry(
