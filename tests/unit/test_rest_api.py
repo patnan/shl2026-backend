@@ -29,14 +29,16 @@ def test_schedule_endpoint_returns_404_when_missing(monkeypatch, tmp_path):
 def test_schedule_endpoint_returns_data(monkeypatch, tmp_path):
     schedule = [
         ScheduleEntry(
-            date="2025-09-16",
-            time="19:00",
-            game_result="2-1",
-            spectators="5000",
-            venue="Arena",
-            game_url="https://stats.swehockey.se/Game/Events/1004308",
-            round="1",
-        )
+                    date="2025-09-16",
+                    time="19:00",
+                    home_team="Team A",
+                    away_team="Team B",
+                    game_result="2-1",
+                    spectators="5000",
+                    venue="Arena",
+                    game_url="https://stats.swehockey.se/Game/Events/1004308",
+                    round="1",
+                )
     ]
     monkeypatch.setattr("src.shl.rest_api.get_schedule", lambda season_id, cache_dir: schedule)
     monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
@@ -72,14 +74,16 @@ def test_games_by_date_endpoint_uses_date_query(monkeypatch, tmp_path):
 def test_played_games_endpoint_returns_list(monkeypatch, tmp_path):
     entries = [
         ScheduleEntry(
-            date="2025-09-16",
-            time="19:00",
-            game_result="2-1",
-            spectators="5000",
-            venue="Arena",
-            game_url="https://stats.swehockey.se/Game/Events/1004308",
-            round="1",
-        )
+                    date="2025-09-16",
+                    time="19:00",
+                    home_team="Team A",
+                    away_team="Team B",
+                    game_result="2-1",
+                    spectators="5000",
+                    venue="Arena",
+                    game_url="https://stats.swehockey.se/Game/Events/1004308",
+                    round="1",
+                )
     ]
     monkeypatch.setattr("src.shl.rest_api.get_all_played_games", lambda season_id, cache_dir: entries)
     monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
@@ -114,14 +118,16 @@ def test_standings_endpoint_returns_data(monkeypatch, tmp_path):
     monkeypatch.setattr("src.shl.rest_api.get_standings", lambda season_id, cache_dir: rows)
     monkeypatch.setattr("src.shl.rest_api.get_all_played_games", lambda season_id, cache_dir: [
         ScheduleEntry(
-            date="2025-09-16",
-            time="19:00",
-            game_result="2-1",
-            spectators="5000",
-            venue="Arena",
-            game_url="https://stats.swehockey.se/Game/Events/1004308",
-            round="1",
-        )
+                    date="2025-09-16",
+                    time="19:00",
+                    home_team="Team A",
+                    away_team="Team B",
+                    game_result="2-1",
+                    spectators="5000",
+                    venue="Arena",
+                    game_url="https://stats.swehockey.se/Game/Events/1004308",
+                    round="1",
+                )
     ])
     monkeypatch.setattr("src.shl.rest_api.get_games_freshness", lambda cache_dir, game_ids: {
         "requested_game_count": 1,

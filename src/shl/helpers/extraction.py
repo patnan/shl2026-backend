@@ -238,9 +238,20 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
             elif len(cells) > 5:
                 venue = re.sub(r"\s+", " ", cells[5].get_text(" ", strip=True)).strip()
 
+            # Extract teams from the teams cell.
+            home_team = ""
+            away_team = ""
+            if teams_cell:
+                team_match = re.match(r"(.+?)\s*-\s*(.+)", teams_cell)
+                if team_match:
+                    home_team = team_match.group(1).strip()
+                    away_team = team_match.group(2).strip()
+
             schedule_games.append(ScheduleEntry(
                 date=current_date,
                 time=time_match.group(0) if time_match else "",
+                home_team=home_team,
+                away_team=away_team,
                 game_result=game_result,
                 spectators=spectators,
                 venue=venue,

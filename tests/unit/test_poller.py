@@ -173,32 +173,38 @@ def test_seed_season_targets_creates_schedule_standings_and_game_targets(monkeyp
         "src.shl.poller.fetch_schedule",
         lambda season_id, cache_dir, force_reparse=False: [
             ScheduleEntry(
-                date="2025-09-16",
-                time="19:00",
-                game_result="",
-                spectators="",
-                venue="",
-                game_url="https://stats.swehockey.se/Game/Events/1004308",
-                round="1",
-            ),
+                        date="2025-09-16",
+                        time="19:00",
+                        home_team="Team A",
+                        away_team="Team B",
+                        game_result="",
+                        spectators="",
+                        venue="",
+                        game_url="https://stats.swehockey.se/Game/Events/1004308",
+                        round="1",
+                    ),
             ScheduleEntry(
-                date="2025-09-16",
-                time="19:00",
-                game_result="",
-                spectators="",
-                venue="",
-                game_url="https://stats.swehockey.se/Game/Events/1004308",
-                round="1",
-            ),
+                        date="2025-09-16",
+                        time="19:00",
+                        home_team="Team A",
+                        away_team="Team B",
+                        game_result="",
+                        spectators="",
+                        venue="",
+                        game_url="https://stats.swehockey.se/Game/Events/1004308",
+                        round="1",
+                    ),
             ScheduleEntry(
-                date="2025-09-16",
-                time="19:00",
-                game_result="",
-                spectators="",
-                venue="",
-                game_url="https://stats.swehockey.se/Game/Events/1004309",
-                round="1",
-            ),
+                        date="2025-09-16",
+                        time="19:00",
+                        home_team="Team A",
+                        away_team="Team B",
+                        game_result="",
+                        spectators="",
+                        venue="",
+                        game_url="https://stats.swehockey.se/Game/Events/1004309",
+                        round="1",
+                    ),
         ],
     )
 
@@ -256,14 +262,16 @@ def test_game_target_skipped_when_not_active(monkeypatch, tmp_path):
     # Save a schedule with a game that was yesterday (already finished).
     save_schedule(tmp_path, 18263, [
         ScheduleEntry(
-            date="2026-09-15",
-            time="19:00",
-            game_result="3 - 2",
-            spectators="8000",
-            venue="Arena",
-            game_url="https://stats.swehockey.se/Game/Events/1004308",
-            round="1",
-        ),
+                    date="2026-09-15",
+                    time="19:00",
+                    home_team="Team A",
+                    away_team="Team B",
+                    game_result="3 - 2",
+                    spectators="8000",
+                    venue="Arena",
+                    game_url="https://stats.swehockey.se/Game/Events/1004308",
+                    round="1",
+                ),
     ])
 
     # Seed the game target.
@@ -294,14 +302,16 @@ def test_game_target_polled_when_active(monkeypatch, tmp_path):
 
     save_schedule(tmp_path, 18263, [
         ScheduleEntry(
-            date="2026-09-16",
-            time="19:00",
-            game_result="",
-            spectators="",
-            venue="Arena",
-            game_url="https://stats.swehockey.se/Game/Events/1004308",
-            round="1",
-        ),
+                    date="2026-09-16",
+                    time="19:00",
+                    home_team="Team A",
+                    away_team="Team B",
+                    game_result="",
+                    spectators="",
+                    venue="Arena",
+                    game_url="https://stats.swehockey.se/Game/Events/1004308",
+                    round="1",
+                ),
     ])
 
     upsert_poll_target(
@@ -334,14 +344,16 @@ def test_game_target_deferred_when_future(monkeypatch, tmp_path):
 
     save_schedule(tmp_path, 18263, [
         ScheduleEntry(
-            date="2026-09-16",
-            time="19:00",
-            game_result="",
-            spectators="",
-            venue="Arena",
-            game_url="https://stats.swehockey.se/Game/Events/1004308",
-            round="1",
-        ),
+                    date="2026-09-16",
+                    time="19:00",
+                    home_team="Team A",
+                    away_team="Team B",
+                    game_result="",
+                    spectators="",
+                    venue="Arena",
+                    game_url="https://stats.swehockey.se/Game/Events/1004308",
+                    round="1",
+                ),
     ])
 
     upsert_poll_target(

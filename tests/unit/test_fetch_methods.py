@@ -27,6 +27,8 @@ def make_schedule_entry(game_id: int) -> ScheduleEntry:
     return ScheduleEntry(
         date="2025-09-16",
         time="19:00",
+        home_team="Team A",
+        away_team="Team B",
         game_result="2-1",
         spectators="1234",
         venue="Arena",

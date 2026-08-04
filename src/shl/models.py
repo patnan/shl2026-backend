@@ -208,6 +208,8 @@ class Game:
 class ScheduleEntry:
     date: str
     time: str
+    home_team: str
+    away_team: str
     game_result: str
     spectators: str
     venue: str
@@ -219,6 +221,8 @@ class ScheduleEntry:
         return cls(
             date=d.get("date") or "",
             time=d.get("time") or "",
+            home_team=d.get("home_team") or "",
+            away_team=d.get("away_team") or "",
             game_result=d.get("game_result") or "",
             spectators=d.get("spectators") or "",
             venue=d.get("venue") or "",

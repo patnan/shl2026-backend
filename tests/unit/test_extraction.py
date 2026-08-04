@@ -19,7 +19,7 @@ from src.shl.models import Game, GameInfo, Score, ScheduleEntry
 
 
 def make_schedule_entry(date, game_url):
-    return ScheduleEntry(date=date, time="", game_result="", spectators="", venue="", game_url=game_url, round="")
+    return ScheduleEntry(date=date, time="", home_team="", away_team="", game_result="", spectators="", venue="", game_url=game_url, round="")
 
 
 def make_game(url):
