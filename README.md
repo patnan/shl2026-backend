@@ -72,6 +72,9 @@ Key model types:
 - [src/shl/helpers/stats_parsing.py](src/shl/helpers/stats_parsing.py)
   Parsers for player stats, goalie stats, and roster HTML pages.
 
+- [src/shl/shl_se.py](src/shl/shl_se.py)
+  SHL.se API client and SweHockey ↔ shl.se team/player mapping (logos, portraits).
+
 - [src/cli.py](src/cli.py)
   CLI entrypoint with scrape, validate, compare, serve, poller-seed, and poller-run commands.
 

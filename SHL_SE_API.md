@@ -353,6 +353,41 @@ Retrieved from `/api/site/settings` → `teamsInSite`:
 
 ## Comparison with SweHockey
 
+### Python integration module
+
+The mapping is implemented in [src/shl/shl_se.py](src/shl/shl_se.py):
+
+```python
+from src.shl.shl_se import TeamMapper, PlayerMapper
+
+# Create mappers (fetches team data from shl.se)
+team_mapper = TeamMapper.from_api()
+player_mapper = PlayerMapper(team_mapper)
+
+# Load roster for a team (using SweHockey name)
+player_mapper.load_team("Skellefteå AIK")
+
+# Look up player by SweHockey team name + jersey number
+player = player_mapper.find("Skellefteå AIK", 24)
+# → ShlSePlayer(full_name="Oscar Lindberg", portrait_url="https://...", ...)
+
+# Get team logo
+logo = player_mapper.get_team_logo_url("Frölunda HC")
+# → "https://sportality.cdn.s8y.se/team-logos/fhc1_fhc.svg"
+
+# Map SweHockey name → shl.se team
+shl_team = team_mapper.swehockey_to_shl_se("Växjö Lakers HC")
+# → ShlSeTeam(team_code="VLH", uuid="fe02-fe02mf1FN", ...)
+
+# Map shl.se team → SweHockey name
+swh_name = team_mapper.shl_se_to_swehockey(shl_team, swehockey_team_names)
+# → "Växjö Lakers HC"
+```
+
+The team matching algorithm uses shl.se's `teamNames.short` (e.g. "Frölunda", "Skellefteå") which is always a substring of SweHockey's full name (e.g. "Frölunda HC", "Skellefteå AIK"). No hardcoded mapping needed.
+
+### Data comparison
+
 | Data | SweHockey (stats.swehockey.se) | SHL.se API |
 |------|-------------------------------|------------|
 | Schedule | HTML scraping | JSON (needs season/series UUIDs) |
