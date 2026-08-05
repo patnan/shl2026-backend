@@ -203,3 +203,30 @@ This allows testing without breaking the current working app.
 3. **Team logos** — hardcode in app (already partly done) or add to backend API?
 4. **Season ID** — hardcode for now, or make configurable in settings?
 5. **Live games** — accept no period/clock until season starts, or hide live tab?
+
+---
+
+## EliteProspects Data — Options
+
+The old backend used Playwright (headless Chromium) to scrape EliteProspects for career data. This is heavy, fragile, and the reason it was never ported to the lighter backends.
+
+**Options:**
+
+| # | Approach | Pros | Cons |
+|---|----------|------|------|
+| 1 | **Drop player detail** | Zero effort, no dependency | Lose career view |
+| 2 | **EliteProspects paid API** | Clean REST JSON, reliable | Costs money |
+| 3 | **Keep old monolith for player detail only** | No migration needed for that view | Two backends running |
+| 4 | **One-off Playwright cache per season** | Full data, no runtime dependency | Run Playwright manually at season start, serve static JSON |
+
+**Recommended: Option 4** — Run a Playwright scrape once at season start (or in CI), dump all player career data to a JSON file per team, serve it from shl2026 as a static dataset. Player career data doesn't change mid-season. This gives full richness without ongoing Playwright infrastructure.
+
+Implementation sketch for option 4:
+```
+# One-off script (runs locally or in CI at season start)
+playwright-scrape-ep.py --season 18263 --output cache/eliteprospects/
+
+# Backend serves it statically
+GET /seasons/{id}/players/{team}/{jersey} → reads from cached JSON
+```
+
