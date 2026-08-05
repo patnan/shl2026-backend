@@ -19,6 +19,7 @@ Code root: [src](src)
 - Scrape player scoring leaders from SweHockey.
 - Scrape goalie stats (save %, GAA, wins) from SweHockey.
 - Scrape team rosters from SweHockey.
+- Scrape team abbreviations dynamically from SweHockey roster page navigation.
 - Compare two game snapshots and detect scoring changes.
 - Push notifications for live score changes via FCM.
 - CLI support for scraping, overview validation preview, snapshot comparison, poller seeding/worker runs, and REST API serving.

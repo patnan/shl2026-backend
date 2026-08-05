@@ -92,9 +92,10 @@ Scraped from SweHockey stats pages. Low-frequency polling since this data change
 | `player_stats` | `/Players/Statistics/ScoringLeaders/{season_id}` | Every 2 hours |
 | `goalie_stats` | `/Players/Statistics/LeadingGoaliesSVS/{season_id}` | Every 2 hours |
 | `rosters` | `/Teams/Info/TeamRoster/{season_id}` | Every 24 hours |
+| `team_info` | `/Teams/Info/TeamRoster/{season_id}` (nav anchors) | Every 24 hours |
 
 Methods:
-- [src/shl/stats.py](src/shl/stats.py) fetch_player_stats, fetch_goalie_stats, fetch_rosters
+- [src/shl/stats.py](src/shl/stats.py) fetch_player_stats, fetch_goalie_stats, fetch_rosters, fetch_team_info
 
 ### 6) Live Game Scores (TODO — new season)
 
@@ -217,9 +218,10 @@ Endpoints:
 7. GET /seasons/{season_id}/rounds
 8. GET /seasons/{season_id}/rounds/played
 9. GET /seasons/{season_id}/rounds/next
-10. GET /games/{game_id}
-11. POST /devices
-12. DELETE /devices
+10. GET /seasons/{season_id}/teams
+11. GET /games/{game_id}
+12. POST /devices
+13. DELETE /devices
 
 Response metadata:
 1. fetched_at

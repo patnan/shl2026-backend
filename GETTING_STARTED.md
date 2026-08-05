@@ -158,7 +158,7 @@ curl -X POST http://127.0.0.1:8000/devices \
 
 ## What the poller fetches
 
-On first seed, the poller creates 5 targets per season:
+On first seed, the poller creates 6 targets per season:
 
 | Target | SweHockey source | Polling cadence |
 |--------|-----------------|-----------------|
@@ -167,6 +167,7 @@ On first seed, the poller creates 5 targets per season:
 | Player stats | `/Players/Statistics/ScoringLeaders/{id}` | Every 2 hours |
 | Goalie stats | `/Players/Statistics/LeadingGoaliesSVS/{id}` | Every 2 hours |
 | Rosters | `/Teams/Info/TeamRoster/{id}` | Every 24 hours |
+| Team info | `/Teams/Info/TeamRoster/{id}` (abbreviations) | Every 24 hours |
 
 ---
 
@@ -188,6 +189,7 @@ On first seed, the poller creates 5 targets per season:
 | `GET /seasons/{id}/goalies?team=FRÖ` | Goalie stats filtered by team |
 | `GET /seasons/{id}/rosters` | All team rosters |
 | `GET /seasons/{id}/rosters?team=Brynäs IF` | Single team roster |
+| `GET /seasons/{id}/teams` | Teams with official abbreviations |
 | `GET /games/{game_id}` | Game detail (score, events, team stats) |
 | `POST /devices` | Register device for push notifications |
 | `DELETE /devices` | Unregister device |
