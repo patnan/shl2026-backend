@@ -4,6 +4,8 @@ This project scrapes SweHockey game and schedule pages, stores normalized snapsh
 
 Code root: [src](src)
 
+**Getting started?** See [GETTING_STARTED.md](GETTING_STARTED.md).
+
 ## Implemented capabilities
 
 - Parse a single game page into typed dataclasses.
@@ -190,18 +192,6 @@ SEASON_ID=18263 ./start_poller.sh
 # Start notification worker:
 ./start_notifier.sh
 ```
-
-### Season configuration
-
-The app operates per season. Set the season via `SEASON_ID` environment variable:
-
-| Context | How to set |
-|---------|-----------|
-| Start scripts | `SEASON_ID=18263 ./start_poller.sh` |
-| Docker Compose | Set in `.env` file or inline: `SEASON_ID=18263 docker compose up -d` |
-| Manual CLI | `python -m src.cli poller-seed 18263` |
-
-Default: `18263` (SHL 2025/2026 season).
 
 ## Python API usage
 
