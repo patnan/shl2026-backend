@@ -221,6 +221,34 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /seasons/{season_id}/teams:
+    get:
+      summary: List teams with abbreviations for a season
+      operationId: getSeasonTeams
+      parameters:
+        - name: season_id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: SweHockey season/tournament ID
+      responses:
+        '200':
+          description: Team list with abbreviations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TeamInfo'
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '404':
+          description: Team info not yet fetched
+
   /games/{game_id}:
     get:
       operationId: getGameDetail
@@ -491,6 +519,21 @@ components:
           example: "SWE"
         youth_club:
           type: string
+
+    TeamInfo:
+      type: object
+      properties:
+        team:
+          type: string
+          description: Full team name
+          example: "Brynäs IF"
+        abbreviation:
+          type: string
+          description: Official team abbreviation
+          example: "BIF"
+      required:
+        - team
+        - abbreviation
 
     Score:
       type: object

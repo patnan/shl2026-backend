@@ -1,7 +1,7 @@
 import re
 from datetime import date
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from src.shl.helpers.extraction import extract_game_by_id
 from src.shl.models import Action, Game, Score, ScoreChangeResult, ScoringEvent
@@ -113,6 +113,19 @@ def _normalize_abbrev(value: str) -> str:
     return re.sub(r"\W+", "", value, flags=re.UNICODE).upper()
 
 
+_team_abbrev_cache: Dict[str, str] = {}  # team_name -> abbreviation
+
+
+def load_team_abbrev_map(season_id: int, db_dir: Path) -> None:
+    """Load team abbreviations into the module-level cache."""
+    from src.shl.store import load_team_info
+    teams = load_team_info(db_dir, season_id)
+    if teams:
+        _team_abbrev_cache.clear()
+        for t in teams:
+            _team_abbrev_cache[t.team] = t.abbreviation
+
+
 def _team_abbrev_candidates(team_name: str) -> set:
     tokens = re.findall(r"[A-Za-zÅÄÖåäö]+", team_name)
     if not tokens:
@@ -127,6 +140,11 @@ def _team_abbrev_candidates(team_name: str) -> set:
         for token in tokens[1:]:
             if len(token) <= 3:
                 candidates.add((tokens[0][0] + token).upper())
+
+    # Include stored official abbreviation if available.
+    stored = _team_abbrev_cache.get(team_name)
+    if stored:
+        candidates.add(_normalize_abbrev(stored))
 
     return {_normalize_abbrev(candidate) for candidate in candidates if candidate}
 

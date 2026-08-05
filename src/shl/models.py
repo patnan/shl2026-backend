@@ -408,6 +408,19 @@ class RosterEntry:
 
 
 @dataclass(frozen=True)
+class TeamInfo:
+    team: str  # Full name e.g. "Brynäs IF"
+    abbreviation: str  # e.g. "BIF"
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> TeamInfo:
+        return cls(team=d["team"], abbreviation=d["abbreviation"])
+
+    def to_dict(self) -> Dict:
+        return dataclasses.asdict(self)
+
+
+@dataclass(frozen=True)
 class PenaltyMetadata:
     clean_player_text: str
     players: List[str]

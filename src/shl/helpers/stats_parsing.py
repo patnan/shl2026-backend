@@ -6,7 +6,7 @@ from typing import List
 
 from bs4 import BeautifulSoup
 
-from src.shl.models import GoalieStat, PlayerStat, RosterEntry
+from src.shl.models import GoalieStat, PlayerStat, RosterEntry, TeamInfo
 
 
 def _parse_int(value: str, default: int = 0) -> int:
@@ -196,5 +196,30 @@ def parse_team_rosters(html: str) -> List[RosterEntry]:
                 nationality=cells[7],
                 youth_club=cells[8] if len(cells) > 8 else "",
             ))
+
+    return results
+
+
+def parse_team_abbreviations(html: str) -> List[TeamInfo]:
+    """Parse team abbreviations from the TeamRoster page.
+
+    Extracts team name -> abbreviation from anchor tags matching pattern:
+    <a data-ajax="false" href="#XXX">Team Name</a>
+    where the hash fragment is NOT "top" or empty.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    results: List[TeamInfo] = []
+
+    for anchor in soup.find_all("a", attrs={"data-ajax": "false"}):
+        href = anchor.get("href", "")
+        if not href or not href.startswith("#"):
+            continue
+        fragment = href[1:]
+        if not fragment or fragment.lower() == "top":
+            continue
+        team_name = anchor.get_text(strip=True)
+        if not team_name:
+            continue
+        results.append(TeamInfo(team=team_name, abbreviation=fragment))
 
     return results

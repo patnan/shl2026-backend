@@ -16,6 +16,7 @@ from src.shl.models import (
     RosterEntry,
     ScheduleEntry,
     StandingsRow,
+    TeamInfo,
 )
 
 _logger = logging.getLogger(__name__)
@@ -85,6 +86,11 @@ CREATE TABLE IF NOT EXISTS goalie_stats (
     fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS rosters (
+    season_id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS team_info (
     season_id INTEGER PRIMARY KEY,
     data TEXT NOT NULL,
     fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -288,6 +294,30 @@ class Store:
         conn.execute(
             "INSERT OR REPLACE INTO rosters (season_id, data, fetched_at) VALUES (?, ?, ?)",
             (season_id, json.dumps([dataclasses.asdict(e) for e in rosters], ensure_ascii=False), _utc_now_iso()),
+        )
+        conn.commit()
+
+    # ------------------------------------------------------------------
+    # Team info
+    # ------------------------------------------------------------------
+
+    def load_team_info(self, season_id: int) -> Optional[List[TeamInfo]]:
+        row = self._get_conn().execute(
+            "SELECT data FROM team_info WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return [TeamInfo.from_dict(e) for e in json.loads(row[0])] if row else None
+
+    def get_team_info_fetched_at(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM team_info WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_team_info(self, season_id: int, teams: List[TeamInfo]) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO team_info (season_id, data, fetched_at) VALUES (?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(e) for e in teams], ensure_ascii=False), _utc_now_iso()),
         )
         conn.commit()
 
@@ -619,6 +649,18 @@ def get_rosters_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
 
 def save_rosters(cache_dir: Path, season_id: int, rosters: List[RosterEntry]) -> None:
     _store(cache_dir).save_rosters(season_id, rosters)
+
+
+def load_team_info(cache_dir: Path, season_id: int) -> Optional[List[TeamInfo]]:
+    return _store(cache_dir).load_team_info(season_id)
+
+
+def get_team_info_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_team_info_fetched_at(season_id)
+
+
+def save_team_info(cache_dir: Path, season_id: int, teams: List[TeamInfo]) -> None:
+    _store(cache_dir).save_team_info(season_id, teams)
 
 
 def upsert_poll_target(
