@@ -16,11 +16,11 @@ def _iso(dt: datetime) -> str:
 def test_seed_then_tick_updates_poll_state_and_writes_completed_events(monkeypatch, tmp_path):
     now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
-    # Seed schedule + standings targets without requiring schedule fetch.
+    # Seed all targets.
     seed_result = seed_season_targets(tmp_path, season_id=18263)
-    assert seed_result["total_targets"] == 2
+    assert seed_result["total_targets"] == 5
 
-    # Seed uses real current time; force deterministic due-state for this test timestamp.
+    # Force schedule + standings to be due; push stats targets into the future.
     upsert_poll_target(
         tmp_path,
         target_type="schedule",
@@ -35,6 +35,15 @@ def test_seed_then_tick_updates_poll_state_and_writes_completed_events(monkeypat
         enabled=True,
         next_poll_at=_iso(now - timedelta(seconds=30)),
     )
+    # Push new targets far into the future so they aren't due.
+    for tt in ("player_stats", "goalie_stats", "rosters"):
+        upsert_poll_target(
+            tmp_path,
+            target_type=tt,
+            target_key="18263",
+            enabled=True,
+            next_poll_at=_iso(now + timedelta(hours=24)),
+        )
 
     monkeypatch.setattr("src.shl.poller.fetch_schedule", lambda season_id, cache_dir, **kwargs: [])
     monkeypatch.setattr("src.shl.poller.fetch_table", lambda season_id, cache_dir: [])
@@ -52,8 +61,9 @@ def test_seed_then_tick_updates_poll_state_and_writes_completed_events(monkeypat
     assert due_after == []
 
     targets = list_poll_targets(tmp_path)
-    assert len(targets) == 2
-    for target in targets:
+    assert len(targets) == 5
+    polled_targets = [t for t in targets if t.target_type in ("schedule", "standings")]
+    for target in polled_targets:
         assert target.error_count == 0
         assert target.last_success_at is not None
         assert target.next_poll_at is not None

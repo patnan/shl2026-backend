@@ -8,7 +8,7 @@ import time
 from collections import defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +27,8 @@ from src.shl.schedule import (
 from src.shl.store import get_games_freshness, get_schedule_fetched_at
 from src.shl.store import get_game_fetched_at, load_game
 from src.shl.store import register_device, unregister_device
+from src.shl.stats import get_goalie_stats, get_player_stats, get_rosters
+from src.shl.store import get_player_stats_fetched_at, get_goalie_stats_fetched_at, get_rosters_fetched_at
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +295,58 @@ def create_app(cache_dir: Path) -> FastAPI:
                 "source_games_oldest_fetched_at": games_freshness["oldest_fetched_at"],
                 "source_games_cached_count": games_freshness["cached_game_count"],
                 "source_games_requested_count": games_freshness["requested_game_count"],
+                **_meta(),
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Player stats
+    # ------------------------------------------------------------------
+
+    @app.get("/seasons/{season_id}/players")
+    def season_player_stats(season_id: int, team: Optional[str] = None) -> Dict[str, Any]:
+        stats = get_player_stats(season_id, cache_dir)
+        if stats is None:
+            return JSONResponse(status_code=404, content={"error": "Player stats not yet fetched for this season."})
+        if team:
+            stats = [s for s in stats if s.team.upper() == team.upper()]
+        return {
+            "data": _serialize(stats),
+            "meta": {
+                "season_id": str(season_id),
+                "source_fetched_at": get_player_stats_fetched_at(cache_dir, season_id),
+                **_meta(),
+            },
+        }
+
+    @app.get("/seasons/{season_id}/goalies")
+    def season_goalie_stats(season_id: int, team: Optional[str] = None) -> Dict[str, Any]:
+        stats = get_goalie_stats(season_id, cache_dir)
+        if stats is None:
+            return JSONResponse(status_code=404, content={"error": "Goalie stats not yet fetched for this season."})
+        if team:
+            stats = [s for s in stats if s.team.upper() == team.upper()]
+        return {
+            "data": _serialize(stats),
+            "meta": {
+                "season_id": str(season_id),
+                "source_fetched_at": get_goalie_stats_fetched_at(cache_dir, season_id),
+                **_meta(),
+            },
+        }
+
+    @app.get("/seasons/{season_id}/rosters")
+    def season_rosters(season_id: int, team: Optional[str] = None) -> Dict[str, Any]:
+        rosters = get_rosters(season_id, cache_dir)
+        if rosters is None:
+            return JSONResponse(status_code=404, content={"error": "Rosters not yet fetched for this season."})
+        if team:
+            rosters = [r for r in rosters if r.team.upper() == team.upper() or r.team == team]
+        return {
+            "data": _serialize(rosters),
+            "meta": {
+                "season_id": str(season_id),
+                "source_fetched_at": get_rosters_fetched_at(cache_dir, season_id),
                 **_meta(),
             },
         }

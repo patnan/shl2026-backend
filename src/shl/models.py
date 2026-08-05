@@ -294,6 +294,118 @@ class StandingsRow:
 
 
 @dataclass(frozen=True)
+class PlayerStat:
+    rank: int
+    jersey: int
+    name: str
+    team: str
+    position: str
+    games_played: int
+    goals: int
+    assists: int
+    total_points: int
+    points_per_game: float
+    penalty_minutes: int
+    plus_minus: int
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> PlayerStat:
+        return cls(
+            rank=d["rank"],
+            jersey=d["jersey"],
+            name=d["name"],
+            team=d["team"],
+            position=d["position"],
+            games_played=d["games_played"],
+            goals=d["goals"],
+            assists=d["assists"],
+            total_points=d["total_points"],
+            points_per_game=d["points_per_game"],
+            penalty_minutes=d["penalty_minutes"],
+            plus_minus=d["plus_minus"],
+        )
+
+    def to_dict(self) -> Dict:
+        return dataclasses.asdict(self)
+
+
+@dataclass(frozen=True)
+class GoalieStat:
+    rank: int
+    jersey: int
+    name: str
+    team: str
+    games_played: int
+    games_played_in: int
+    minutes_in_play: str
+    shots_on_goal: int
+    goals_against: int
+    goals_against_avg: float
+    saves: int
+    save_percentage: float
+    shutouts: int
+    wins: int
+    losses: int
+    win_percentage: float
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> GoalieStat:
+        return cls(
+            rank=d["rank"],
+            jersey=d["jersey"],
+            name=d["name"],
+            team=d["team"],
+            games_played=d["games_played"],
+            games_played_in=d["games_played_in"],
+            minutes_in_play=d["minutes_in_play"],
+            shots_on_goal=d["shots_on_goal"],
+            goals_against=d["goals_against"],
+            goals_against_avg=d["goals_against_avg"],
+            saves=d["saves"],
+            save_percentage=d["save_percentage"],
+            shutouts=d["shutouts"],
+            wins=d["wins"],
+            losses=d["losses"],
+            win_percentage=d["win_percentage"],
+        )
+
+    def to_dict(self) -> Dict:
+        return dataclasses.asdict(self)
+
+
+@dataclass(frozen=True)
+class RosterEntry:
+    team: str
+    jersey: int
+    name: str
+    birthdate: str
+    position: str
+    handedness: str
+    height: int
+    weight: int
+    nationality: str
+    youth_club: str
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> RosterEntry:
+        return cls(
+            team=d["team"],
+            jersey=d["jersey"],
+            name=d["name"],
+            birthdate=d["birthdate"],
+            position=d["position"],
+            handedness=d["handedness"],
+            height=d["height"],
+            weight=d["weight"],
+            nationality=d["nationality"],
+            youth_club=d["youth_club"],
+        )
+
+    def to_dict(self) -> Dict:
+        return dataclasses.asdict(self)
+
+
+@dataclass(frozen=True)
 class PenaltyMetadata:
     clean_player_text: str
     players: List[str]

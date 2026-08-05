@@ -10,7 +10,10 @@ from typing import List, Optional
 from src.shl.models import (
     DomainEvent,
     Game,
+    GoalieStat,
+    PlayerStat,
     PollTarget,
+    RosterEntry,
     ScheduleEntry,
     StandingsRow,
 )
@@ -71,6 +74,21 @@ CREATE INDEX IF NOT EXISTS idx_poll_state_next_poll_at ON poll_state(next_poll_a
 CREATE INDEX IF NOT EXISTS idx_domain_events_processed_at ON domain_events(processed_at);
 CREATE INDEX IF NOT EXISTS idx_domain_events_created_at ON domain_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_devices_fcm_token ON devices(fcm_token);
+CREATE TABLE IF NOT EXISTS player_stats (
+    season_id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS goalie_stats (
+    season_id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS rosters (
+    season_id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -198,6 +216,78 @@ class Store:
         conn.execute(
             "INSERT OR REPLACE INTO schedule (season_id, data, fetched_at) VALUES (?, ?, ?)",
             (season_id, json.dumps([dataclasses.asdict(e) for e in schedule], ensure_ascii=False), _utc_now_iso()),
+        )
+        conn.commit()
+
+    # ------------------------------------------------------------------
+    # Player stats
+    # ------------------------------------------------------------------
+
+    def load_player_stats(self, season_id: int) -> Optional[List[PlayerStat]]:
+        row = self._get_conn().execute(
+            "SELECT data FROM player_stats WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return [PlayerStat.from_dict(e) for e in json.loads(row[0])] if row else None
+
+    def get_player_stats_fetched_at(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM player_stats WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_player_stats(self, season_id: int, stats: List[PlayerStat]) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO player_stats (season_id, data, fetched_at) VALUES (?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(e) for e in stats], ensure_ascii=False), _utc_now_iso()),
+        )
+        conn.commit()
+
+    # ------------------------------------------------------------------
+    # Goalie stats
+    # ------------------------------------------------------------------
+
+    def load_goalie_stats(self, season_id: int) -> Optional[List[GoalieStat]]:
+        row = self._get_conn().execute(
+            "SELECT data FROM goalie_stats WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return [GoalieStat.from_dict(e) for e in json.loads(row[0])] if row else None
+
+    def get_goalie_stats_fetched_at(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM goalie_stats WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_goalie_stats(self, season_id: int, stats: List[GoalieStat]) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO goalie_stats (season_id, data, fetched_at) VALUES (?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(e) for e in stats], ensure_ascii=False), _utc_now_iso()),
+        )
+        conn.commit()
+
+    # ------------------------------------------------------------------
+    # Rosters
+    # ------------------------------------------------------------------
+
+    def load_rosters(self, season_id: int) -> Optional[List[RosterEntry]]:
+        row = self._get_conn().execute(
+            "SELECT data FROM rosters WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return [RosterEntry.from_dict(e) for e in json.loads(row[0])] if row else None
+
+    def get_rosters_fetched_at(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM rosters WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_rosters(self, season_id: int, rosters: List[RosterEntry]) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO rosters (season_id, data, fetched_at) VALUES (?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(e) for e in rosters], ensure_ascii=False), _utc_now_iso()),
         )
         conn.commit()
 
@@ -493,6 +583,42 @@ def get_schedule_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
 
 def save_schedule(cache_dir: Path, season_id: int, schedule: List[ScheduleEntry]) -> None:
     _store(cache_dir).save_schedule(season_id, schedule)
+
+
+def load_player_stats(cache_dir: Path, season_id: int) -> Optional[List[PlayerStat]]:
+    return _store(cache_dir).load_player_stats(season_id)
+
+
+def get_player_stats_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_player_stats_fetched_at(season_id)
+
+
+def save_player_stats(cache_dir: Path, season_id: int, stats: List[PlayerStat]) -> None:
+    _store(cache_dir).save_player_stats(season_id, stats)
+
+
+def load_goalie_stats(cache_dir: Path, season_id: int) -> Optional[List[GoalieStat]]:
+    return _store(cache_dir).load_goalie_stats(season_id)
+
+
+def get_goalie_stats_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_goalie_stats_fetched_at(season_id)
+
+
+def save_goalie_stats(cache_dir: Path, season_id: int, stats: List[GoalieStat]) -> None:
+    _store(cache_dir).save_goalie_stats(season_id, stats)
+
+
+def load_rosters(cache_dir: Path, season_id: int) -> Optional[List[RosterEntry]]:
+    return _store(cache_dir).load_rosters(season_id)
+
+
+def get_rosters_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_rosters_fetched_at(season_id)
+
+
+def save_rosters(cache_dir: Path, season_id: int, rosters: List[RosterEntry]) -> None:
+    _store(cache_dir).save_rosters(season_id, rosters)
 
 
 def upsert_poll_target(
