@@ -1,0 +1,705 @@
+openapi: "3.1.0"
+info:
+  title: SHL Data API
+  description: |
+    Read-only API for SHL (Swedish Hockey League) data scraped from SweHockey.
+    Provides schedule, standings, game details, player/goalie stats, and team rosters.
+  version: "1.0.0"
+  contact:
+    name: shl2026-backend
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /seasons/{season_id}/schedule:
+    get:
+      operationId: getSchedule
+      summary: Full season schedule
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+      responses:
+        "200":
+          description: Season schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /seasons/{season_id}/games:
+    get:
+      operationId: getGamesByDate
+      summary: Games filtered by date
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            example: "2025-09-13"
+      responses:
+        "200":
+          description: Games for the specified date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleResponse"
+
+  /seasons/{season_id}/games/today:
+    get:
+      operationId: getTodaysGames
+      summary: Today's upcoming/live games
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+      responses:
+        "200":
+          description: Today's games without a final result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleResponse"
+
+  /seasons/{season_id}/games/played:
+    get:
+      operationId: getPlayedGames
+      summary: All played games (with results)
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+      responses:
+        "200":
+          description: All games with a final result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleResponse"
+
+  /seasons/{season_id}/rounds:
+    get:
+      operationId: getRounds
+      summary: Schedule grouped by round
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+      responses:
+        "200":
+          description: All rounds with their games
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoundsResponse"
+
+  /seasons/{season_id}/rounds/played:
+    get:
+      operationId: getPlayedRounds
+      summary: Completed rounds only
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+      responses:
+        "200":
+          description: Rounds where all games have results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoundsResponse"
+
+  /seasons/{season_id}/rounds/next:
+    get:
+      operationId: getNextRound
+      summary: Next unplayed round
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+      responses:
+        "200":
+          description: Next round with unplayed games
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoundResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /seasons/{season_id}/standings:
+    get:
+      operationId: getStandings
+      summary: League standings (live during games)
+      description: |
+        Computed from schedule data. During game days, standings reflect
+        in-progress scores within ~30 seconds of a goal.
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+      responses:
+        "200":
+          description: Current standings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandingsResponse"
+
+  /seasons/{season_id}/players:
+    get:
+      operationId: getPlayerStats
+      summary: Scoring leaders
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+        - name: team
+          in: query
+          required: false
+          description: Filter by team abbreviation (e.g. SKE, FRÖ)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Player scoring statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlayerStatsResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /seasons/{season_id}/goalies:
+    get:
+      operationId: getGoalieStats
+      summary: Goalie statistics
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+        - name: team
+          in: query
+          required: false
+          description: Filter by team abbreviation
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Goalie statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoalieStatsResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /seasons/{season_id}/rosters:
+    get:
+      operationId: getRosters
+      summary: Team rosters
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+        - name: team
+          in: query
+          required: false
+          description: Filter by full team name (e.g. Brynäs IF)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Player rosters for all teams (or filtered)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RostersResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /games/{game_id}:
+    get:
+      operationId: getGameDetail
+      summary: Game detail (score, events, team stats)
+      parameters:
+        - name: game_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Full game detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GameDetailResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /devices:
+    post:
+      operationId: registerDevice
+      summary: Register device for push notifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceRegistration"
+      responses:
+        "200":
+          description: Device registered
+    delete:
+      operationId: unregisterDevice
+      summary: Unregister device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceUnregistration"
+      responses:
+        "200":
+          description: Device unregistered
+
+components:
+  parameters:
+    SeasonId:
+      name: season_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        example: 18263
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+
+  schemas:
+    Meta:
+      type: object
+      description: Response metadata with freshness info
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        season_id:
+          type: string
+        source_fetched_at:
+          type: string
+          format: date-time
+
+    ScheduleEntry:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          example: "2025-09-13"
+        time:
+          type: string
+          example: "19:00"
+        home_team:
+          type: string
+          example: "Brynäs IF"
+        away_team:
+          type: string
+          example: "Växjö Lakers HC"
+        game_result:
+          type: string
+          example: "4 - 7"
+          description: Empty string if game hasn't been played yet
+        periods:
+          type: string
+          example: "(1-2, 2-3, 1-2)"
+        spectators:
+          type: string
+        venue:
+          type: string
+        game_url:
+          type: string
+          example: "https://stats.swehockey.se/Game/Events/1004308"
+        round:
+          type: string
+        status:
+          type: string
+          description: "Game status during live games (e.g. '1st period', 'Final Score'). Empty when not live."
+        overtime:
+          type: string
+          enum: ["", "OT", "SO"]
+          description: Derived from period count
+
+    StandingsRow:
+      type: object
+      properties:
+        rank:
+          type: integer
+        team:
+          type: string
+          example: "Skellefteå AIK"
+        games_played:
+          type: integer
+        w:
+          type: integer
+          description: Regulation wins
+        t:
+          type: integer
+          description: Games that went to OT/SO
+        l:
+          type: integer
+          description: Regulation losses
+        goals_for:
+          type: integer
+        goals_against:
+          type: integer
+        goal_difference:
+          type: integer
+        tp:
+          type: integer
+          description: Total points
+        otw:
+          type: integer
+          description: Overtime wins
+        otl:
+          type: integer
+          description: Overtime losses
+        gwsw:
+          type: integer
+          description: Game-winning shot wins (shootout)
+        gwsl:
+          type: integer
+          description: Game-winning shot losses (shootout)
+        movement:
+          type: integer
+          description: Position change since last snapshot (positive = moved up)
+
+    PlayerStat:
+      type: object
+      properties:
+        rank:
+          type: integer
+        jersey:
+          type: integer
+        name:
+          type: string
+          example: "Lindberg, Oscar"
+        team:
+          type: string
+          example: "SKE"
+        position:
+          type: string
+          enum: ["CE", "LW", "RW", "LD", "RD"]
+        games_played:
+          type: integer
+        goals:
+          type: integer
+        assists:
+          type: integer
+        total_points:
+          type: integer
+        points_per_game:
+          type: number
+          format: float
+        penalty_minutes:
+          type: integer
+        plus_minus:
+          type: integer
+
+    GoalieStat:
+      type: object
+      properties:
+        rank:
+          type: integer
+        jersey:
+          type: integer
+        name:
+          type: string
+          example: "Normann, Tobias"
+        team:
+          type: string
+          example: "FRÖ"
+        games_played:
+          type: integer
+        games_played_in:
+          type: integer
+        minutes_in_play:
+          type: string
+          example: "1425:53"
+        shots_on_goal:
+          type: integer
+        goals_against:
+          type: integer
+        goals_against_avg:
+          type: number
+          format: float
+        saves:
+          type: integer
+        save_percentage:
+          type: number
+          format: float
+        shutouts:
+          type: integer
+        wins:
+          type: integer
+        losses:
+          type: integer
+        win_percentage:
+          type: number
+          format: float
+
+    RosterEntry:
+      type: object
+      properties:
+        team:
+          type: string
+          example: "Brynäs IF"
+        jersey:
+          type: integer
+        name:
+          type: string
+          example: "Djoos, Christian"
+        birthdate:
+          type: string
+          format: date
+          example: "1994-08-06"
+        position:
+          type: string
+        handedness:
+          type: string
+          enum: ["L", "R"]
+        height:
+          type: integer
+          description: Height in cm
+        weight:
+          type: integer
+          description: Weight in kg
+        nationality:
+          type: string
+          example: "SWE"
+        youth_club:
+          type: string
+
+    Score:
+      type: object
+      properties:
+        current:
+          type: string
+          example: "4-7"
+        home_score:
+          type: integer
+        away_score:
+          type: integer
+        periods:
+          type: array
+          items:
+            type: string
+          example: ["1-2", "2-3", "1-2"]
+        current_period:
+          type: integer
+          nullable: true
+        state:
+          type: string
+          nullable: true
+          example: "Final Score"
+
+    GameInfo:
+      type: object
+      properties:
+        home_team:
+          type: string
+        away_team:
+          type: string
+        arena:
+          type: string
+        date_time:
+          type: string
+        league:
+          type: string
+        is_overtime:
+          type: boolean
+        is_shootout:
+          type: boolean
+
+    Action:
+      type: object
+      properties:
+        period:
+          type: string
+          example: "1st period"
+        game_time:
+          type: string
+          example: "03:45"
+        event_type:
+          type: string
+          enum: ["goal", "penalty", "GWS", "PS"]
+        team_abbrev:
+          type: string
+        player_text:
+          type: string
+        players:
+          type: array
+          items:
+            type: string
+        player_numbers:
+          type: array
+          items:
+            type: integer
+        is_goal:
+          type: boolean
+        goal:
+          type: object
+          nullable: true
+          properties:
+            home_score:
+              type: integer
+            away_score:
+              type: integer
+            strength:
+              type: string
+            qualifier:
+              type: string
+              nullable: true
+        penalty_reason:
+          type: string
+          nullable: true
+        penalty_time_range:
+          type: object
+          nullable: true
+          properties:
+            start:
+              type: string
+            end:
+              type: string
+
+    Round:
+      type: object
+      properties:
+        round:
+          type: string
+        games:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScheduleEntry"
+
+    DeviceRegistration:
+      type: object
+      required:
+        - fcm_token
+      properties:
+        fcm_token:
+          type: string
+        platform:
+          type: string
+          default: android
+
+    DeviceUnregistration:
+      type: object
+      required:
+        - fcm_token
+      properties:
+        fcm_token:
+          type: string
+
+    # Response envelopes
+    ScheduleResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScheduleEntry"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    StandingsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/StandingsRow"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    PlayerStatsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlayerStat"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    GoalieStatsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/GoalieStat"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    RostersResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RosterEntry"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    RoundsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Round"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    RoundResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Round"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    GameDetailResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            game:
+              $ref: "#/components/schemas/GameInfo"
+            score:
+              $ref: "#/components/schemas/Score"
+            teams:
+              type: object
+              additionalProperties:
+                type: object
+                description: Team stats (shots, saves, pim, pp)
+            actions:
+              type: array
+              items:
+                $ref: "#/components/schemas/Action"
+        meta:
+          $ref: "#/components/schemas/Meta"
