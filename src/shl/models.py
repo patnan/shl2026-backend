@@ -217,6 +217,7 @@ class ScheduleEntry:
     venue: str
     game_url: str
     round: str
+    status: str = ""  # Game status (e.g. "1st period", "Final Score") — populated during live games.
 
     @classmethod
     def from_dict(cls, d: Dict) -> ScheduleEntry:
@@ -231,6 +232,7 @@ class ScheduleEntry:
             venue=d.get("venue") or "",
             game_url=d.get("game_url") or "",
             round=d.get("round") or "",
+            status=d.get("status") or "",
         )
 
     @property
