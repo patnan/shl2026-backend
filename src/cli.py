@@ -173,6 +173,29 @@ def cmd_notifier_run(args: argparse.Namespace, cache_dir: Path) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
+def cmd_snapshot(args: argparse.Namespace, cache_dir: Path) -> None:
+    from datetime import datetime
+    from urllib.parse import urlparse
+
+    url = args.url
+    html = fetch_html(url)
+
+    if args.output:
+        out = resolve_output_path(cache_dir, args.output)
+    else:
+        # Auto-generate filename from URL + timestamp
+        parsed = urlparse(url)
+        path_parts = [p for p in parsed.path.strip("/").split("/") if p]
+        name_base = "_".join(path_parts) if path_parts else "page"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out = cache_dir / "snapshots" / f"{name_base}_{timestamp}.html"
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    print(f"Downloaded {len(html):,} characters from: {url}")
+    print(f"Saved to: {out}")
+
+
 def main() -> None:
     setup_logging()
 
@@ -218,6 +241,11 @@ def main() -> None:
     p_notif.add_argument("--tick-interval", type=float, default=5.0, help="Seconds between event checks (default: 5.0)")
     p_notif.add_argument("--max-ticks", type=int, help="Stop after N ticks (default: run forever)")
 
+    # snapshot
+    p_snap = sub.add_parser("snapshot", help="Download raw HTML from a URL and save to file")
+    p_snap.add_argument("url", help="URL to download")
+    p_snap.add_argument("--output", "-o", help="Output file path (default: auto-generated from URL)")
+
     args = parser.parse_args()
     cache_dir = Path(args.cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -230,6 +258,7 @@ def main() -> None:
         "poller-seed": cmd_poller_seed,
         "poller-run": cmd_poller_run,
         "notifier-run": cmd_notifier_run,
+        "snapshot": cmd_snapshot,
     }[args.command](args, cache_dir)
 
 
