@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.shl.schedule import (
     get_all_played_games,
@@ -29,6 +30,13 @@ from src.shl.store import get_game_fetched_at, load_game
 from src.shl.store import register_device, unregister_device
 from src.shl.stats import get_goalie_stats, get_player_stats, get_rosters, get_team_info
 from src.shl.store import get_player_stats_fetched_at, get_goalie_stats_fetched_at, get_rosters_fetched_at, get_team_info_fetched_at
+from src.shl.shl_se import (
+    fetch_shl_se_player,
+    fetch_shl_se_team_players,
+    get_shl_se_player,
+    get_shl_se_team_players,
+)
+from src.shl.store import get_shl_se_player_fetched_at, load_shl_se_team_players
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +117,11 @@ def create_app(cache_dir: Path) -> FastAPI:
         allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["*"],
     )
+
+    # Static file mount for player portraits.
+    portraits_dir = cache_dir / "portraits"
+    portraits_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/portraits", StaticFiles(directory=str(portraits_dir)), name="portraits")
 
     # Rate limiting.
     rate_limit = int(os.environ.get("SHL_RATE_LIMIT_PER_MINUTE", "60"))
@@ -361,6 +374,63 @@ def create_app(cache_dir: Path) -> FastAPI:
             "meta": {
                 "season_id": str(season_id),
                 "source_fetched_at": get_team_info_fetched_at(cache_dir, season_id),
+                **_meta(),
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # SHL.se player info
+    # ------------------------------------------------------------------
+
+    @app.get("/seasons/{season_id}/shl-se/players/{team}/{jersey}")
+    def shl_se_player_endpoint(season_id: int, team: str, jersey: int, force_refresh: bool = False) -> Dict[str, Any]:
+        """Get shl.se player info by team + jersey."""
+        if force_refresh:
+            data = fetch_shl_se_player(season_id, team, jersey, cache_dir, force_refresh=True)
+        else:
+            data = get_shl_se_player(season_id, team, jersey, cache_dir)
+
+        if data is None:
+            # Try fetching on-demand if not persisted yet.
+            data = fetch_shl_se_player(season_id, team, jersey, cache_dir, force_refresh=False)
+
+        if data is None:
+            raise HTTPException(status_code=404, detail=f"Player not found: {team} #{jersey}")
+
+        fetched_at = get_shl_se_player_fetched_at(cache_dir, season_id, team, jersey)
+        return {
+            "data": data,
+            "meta": {
+                "season_id": str(season_id),
+                "source_fetched_at": fetched_at,
+                **_meta(),
+            },
+        }
+
+    @app.get("/seasons/{season_id}/shl-se/players/{team}")
+    def shl_se_team_players_endpoint(season_id: int, team: str, force_refresh: bool = False) -> Dict[str, Any]:
+        """Get all shl.se players for a team."""
+        if force_refresh:
+            data = fetch_shl_se_team_players(season_id, team, cache_dir, force_refresh=True)
+        else:
+            data = get_shl_se_team_players(season_id, team, cache_dir)
+
+        if data is None:
+            # Try fetching on-demand if not persisted yet.
+            data = fetch_shl_se_team_players(season_id, team, cache_dir, force_refresh=False)
+
+        if not data:
+            raise HTTPException(status_code=404, detail=f"No players found for team: {team}")
+
+        # Get fetched_at from the first player
+        rows = load_shl_se_team_players(cache_dir, season_id, team)
+        fetched_at = rows[0]["fetched_at"] if rows else None
+        return {
+            "data": data,
+            "meta": {
+                "season_id": str(season_id),
+                "count": len(data),
+                "source_fetched_at": fetched_at,
                 **_meta(),
             },
         }

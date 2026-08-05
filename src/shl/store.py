@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS team_info (
     data TEXT NOT NULL,
     fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS shl_se_players (
+    season_id INTEGER NOT NULL,
+    team TEXT NOT NULL,
+    jersey INTEGER NOT NULL,
+    data TEXT NOT NULL,
+    portrait_path TEXT,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (season_id, team, jersey)
+);
 """
 
 
@@ -320,6 +329,56 @@ class Store:
             (season_id, json.dumps([dataclasses.asdict(e) for e in teams], ensure_ascii=False), _utc_now_iso()),
         )
         conn.commit()
+
+    # ------------------------------------------------------------------
+    # SHL.se players
+    # ------------------------------------------------------------------
+
+    def save_shl_se_player(self, season_id: int, team: str, jersey: int, data: dict, portrait_path: Optional[str]) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO shl_se_players (season_id, team, jersey, data, portrait_path, fetched_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (season_id, team, jersey, json.dumps(data, ensure_ascii=False), portrait_path, _utc_now_iso()),
+        )
+        conn.commit()
+
+    def load_shl_se_player(self, season_id: int, team: str, jersey: int) -> Optional[dict]:
+        row = self._get_conn().execute(
+            "SELECT team, jersey, data, portrait_path, fetched_at FROM shl_se_players WHERE season_id = ? AND team = ? AND jersey = ?",
+            (season_id, team, jersey),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "team": row[0],
+            "jersey": row[1],
+            "data": json.loads(row[2]),
+            "portrait_path": row[3],
+            "fetched_at": row[4],
+        }
+
+    def load_shl_se_team_players(self, season_id: int, team: str) -> List[dict]:
+        rows = self._get_conn().execute(
+            "SELECT team, jersey, data, portrait_path, fetched_at FROM shl_se_players WHERE season_id = ? AND team = ?",
+            (season_id, team),
+        ).fetchall()
+        return [
+            {
+                "team": row[0],
+                "jersey": row[1],
+                "data": json.loads(row[2]),
+                "portrait_path": row[3],
+                "fetched_at": row[4],
+            }
+            for row in rows
+        ]
+
+    def get_shl_se_player_fetched_at(self, season_id: int, team: str, jersey: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM shl_se_players WHERE season_id = ? AND team = ? AND jersey = ?",
+            (season_id, team, jersey),
+        ).fetchone()
+        return row[0] if row else None
 
     # ------------------------------------------------------------------
     # Poll targets
@@ -661,6 +720,22 @@ def get_team_info_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
 
 def save_team_info(cache_dir: Path, season_id: int, teams: List[TeamInfo]) -> None:
     _store(cache_dir).save_team_info(season_id, teams)
+
+
+def save_shl_se_player(cache_dir: Path, season_id: int, team: str, jersey: int, data: dict, portrait_path: Optional[str]) -> None:
+    _store(cache_dir).save_shl_se_player(season_id, team, jersey, data, portrait_path)
+
+
+def load_shl_se_player(cache_dir: Path, season_id: int, team: str, jersey: int) -> Optional[dict]:
+    return _store(cache_dir).load_shl_se_player(season_id, team, jersey)
+
+
+def load_shl_se_team_players(cache_dir: Path, season_id: int, team: str) -> List[dict]:
+    return _store(cache_dir).load_shl_se_team_players(season_id, team)
+
+
+def get_shl_se_player_fetched_at(cache_dir: Path, season_id: int, team: str, jersey: int) -> Optional[str]:
+    return _store(cache_dir).get_shl_se_player_fetched_at(season_id, team, jersey)
 
 
 def upsert_poll_target(

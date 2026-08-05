@@ -274,3 +274,188 @@ class TestShlSeTeamFromApi:
         }
         team = ShlSeTeam.from_api(raw)
         assert team.logo_url == "https://example.com/icon.svg"
+
+
+# ---------------------------------------------------------------------------
+# Store: shl_se_players table tests
+# ---------------------------------------------------------------------------
+
+class TestStoreShlSePlayers:
+    def test_save_and_load_player(self, tmp_path):
+        from src.shl.store import Store
+        store = Store(tmp_path)
+        data = {"first_name": "Oscar", "last_name": "Lindberg", "jersey_number": 24}
+        store.save_shl_se_player(20961, "Skellefteå AIK", 24, data, "portraits/SAIK_24.png")
+
+        result = store.load_shl_se_player(20961, "Skellefteå AIK", 24)
+        assert result is not None
+        assert result["data"] == data
+        assert result["portrait_path"] == "portraits/SAIK_24.png"
+        assert result["team"] == "Skellefteå AIK"
+        assert result["jersey"] == 24
+
+    def test_load_player_not_found(self, tmp_path):
+        from src.shl.store import Store
+        store = Store(tmp_path)
+        assert store.load_shl_se_player(20961, "Unknown", 99) is None
+
+    def test_load_team_players(self, tmp_path):
+        from src.shl.store import Store
+        store = Store(tmp_path)
+        store.save_shl_se_player(20961, "Brynäs IF", 3, {"name": "A"}, "portraits/BIF_3.png")
+        store.save_shl_se_player(20961, "Brynäs IF", 5, {"name": "B"}, "portraits/BIF_5.png")
+        store.save_shl_se_player(20961, "Frölunda HC", 30, {"name": "C"}, None)
+
+        result = store.load_shl_se_team_players(20961, "Brynäs IF")
+        assert len(result) == 2
+        assert result[0]["jersey"] == 3
+        assert result[1]["jersey"] == 5
+
+    def test_load_team_players_empty(self, tmp_path):
+        from src.shl.store import Store
+        store = Store(tmp_path)
+        assert store.load_shl_se_team_players(20961, "Unknown") == []
+
+    def test_get_fetched_at(self, tmp_path):
+        from src.shl.store import Store
+        store = Store(tmp_path)
+        store.save_shl_se_player(20961, "HV 71", 10, {"name": "X"}, None)
+        fetched = store.get_shl_se_player_fetched_at(20961, "HV 71", 10)
+        assert fetched is not None
+        assert "202" in fetched
+
+    def test_save_overwrites(self, tmp_path):
+        from src.shl.store import Store
+        store = Store(tmp_path)
+        store.save_shl_se_player(20961, "HV 71", 10, {"v": 1}, None)
+        store.save_shl_se_player(20961, "HV 71", 10, {"v": 2}, "portraits/HV71_10.png")
+        result = store.load_shl_se_player(20961, "HV 71", 10)
+        assert result["data"] == {"v": 2}
+        assert result["portrait_path"] == "portraits/HV71_10.png"
+
+
+# ---------------------------------------------------------------------------
+# download_portrait tests
+# ---------------------------------------------------------------------------
+
+class TestDownloadPortrait:
+    def test_empty_url_returns_none(self, tmp_path):
+        from src.shl.shl_se import download_portrait
+        assert download_portrait("", tmp_path, "BIF", 3) is None
+
+    def test_successful_download(self, tmp_path, monkeypatch):
+        from src.shl.shl_se import download_portrait
+        import httpx
+
+        class FakeResponse:
+            status_code = 200
+            content = b"\x89PNG\r\n\x1a\n fake image data"
+            def raise_for_status(self): pass
+
+        monkeypatch.setattr(httpx, "get", lambda *a, **kw: FakeResponse())
+
+        result = download_portrait("https://example.com/img.png", tmp_path, "SAIK", 24)
+        assert result == "portraits/SAIK_24.png"
+        assert (tmp_path / "portraits" / "SAIK_24.png").exists()
+
+    def test_failed_download_returns_none(self, tmp_path, monkeypatch):
+        from src.shl.shl_se import download_portrait
+        import httpx
+
+        def failing_get(*a, **kw):
+            raise httpx.HTTPError("timeout")
+
+        monkeypatch.setattr(httpx, "get", failing_get)
+
+        result = download_portrait("https://example.com/img.png", tmp_path, "BIF", 3)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# fetch/get function tests
+# ---------------------------------------------------------------------------
+
+class TestFetchGetShlSePlayers:
+    def test_get_shl_se_player_returns_none_when_empty(self, tmp_path):
+        from src.shl.shl_se import get_shl_se_player
+        assert get_shl_se_player(20961, "Brynäs IF", 3, tmp_path) is None
+
+    def test_get_shl_se_player_returns_persisted(self, tmp_path):
+        from src.shl.store import Store
+        from src.shl.shl_se import get_shl_se_player
+        store = Store(tmp_path)
+        data = {"first_name": "Test", "jersey_number": 3}
+        store.save_shl_se_player(20961, "Brynäs IF", 3, data, None)
+
+        result = get_shl_se_player(20961, "Brynäs IF", 3, tmp_path)
+        assert result == data
+
+    def test_get_shl_se_team_players_returns_none_when_empty(self, tmp_path):
+        from src.shl.shl_se import get_shl_se_team_players
+        assert get_shl_se_team_players(20961, "Unknown", tmp_path) is None
+
+    def test_get_shl_se_team_players_returns_list(self, tmp_path):
+        from src.shl.store import Store
+        from src.shl.shl_se import get_shl_se_team_players
+        store = Store(tmp_path)
+        store.save_shl_se_player(20961, "Brynäs IF", 3, {"name": "A"}, None)
+        store.save_shl_se_player(20961, "Brynäs IF", 5, {"name": "B"}, None)
+
+        result = get_shl_se_team_players(20961, "Brynäs IF", tmp_path)
+        assert result is not None
+        assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# REST API endpoint tests
+# ---------------------------------------------------------------------------
+
+class TestShlSeEndpoints:
+    @pytest.fixture
+    def client(self, tmp_path):
+        pytest.importorskip("fastapi")
+        from fastapi.testclient import TestClient
+        from src.shl.rest_api import create_app
+        return TestClient(create_app(tmp_path))
+
+    def test_player_endpoint_404_when_not_found(self, monkeypatch, client):
+        monkeypatch.setattr("src.shl.rest_api.get_shl_se_player", lambda *a, **kw: None)
+        monkeypatch.setattr("src.shl.rest_api.fetch_shl_se_player", lambda *a, **kw: None)
+        response = client.get("/seasons/20961/shl-se/players/Unknown%20FC/99")
+        assert response.status_code == 404
+
+    def test_player_endpoint_returns_data(self, monkeypatch, client):
+        data = {"first_name": "Oscar", "last_name": "Lindberg", "jersey_number": 24,
+                "portrait_url": "/portraits/SAIK_24.png", "team_code": "SAIK"}
+        monkeypatch.setattr("src.shl.rest_api.get_shl_se_player", lambda *a, **kw: data)
+        monkeypatch.setattr("src.shl.rest_api.get_shl_se_player_fetched_at", lambda *a: "2026-08-05T12:00:00")
+
+        response = client.get("/seasons/20961/shl-se/players/Skellefte%C3%A5%20AIK/24")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["data"]["first_name"] == "Oscar"
+        assert payload["data"]["portrait_url"] == "/portraits/SAIK_24.png"
+        assert payload["meta"]["season_id"] == "20961"
+
+    def test_team_endpoint_404_when_not_found(self, monkeypatch, client):
+        monkeypatch.setattr("src.shl.rest_api.get_shl_se_team_players", lambda *a, **kw: None)
+        monkeypatch.setattr("src.shl.rest_api.fetch_shl_se_team_players", lambda *a, **kw: [])
+        monkeypatch.setattr("src.shl.rest_api.load_shl_se_team_players", lambda *a: [])
+        response = client.get("/seasons/20961/shl-se/players/Unknown%20FC")
+        assert response.status_code == 404
+
+    def test_team_endpoint_returns_data(self, monkeypatch, client):
+        data = [
+            {"first_name": "Oscar", "jersey_number": 24},
+            {"first_name": "Lassi", "jersey_number": 30},
+        ]
+        monkeypatch.setattr("src.shl.rest_api.get_shl_se_team_players", lambda *a, **kw: data)
+        monkeypatch.setattr("src.shl.rest_api.load_shl_se_team_players", lambda *a: [
+            {"fetched_at": "2026-08-05T12:00:00"}
+        ])
+
+        response = client.get("/seasons/20961/shl-se/players/Skellefte%C3%A5%20AIK")
+        assert response.status_code == 200
+        payload = response.json()
+        assert len(payload["data"]) == 2
+        assert payload["meta"]["count"] == 2

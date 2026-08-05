@@ -7,9 +7,17 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import httpx
+
+from src.shl.store import (
+    load_shl_se_player,
+    load_shl_se_team_players,
+    save_shl_se_player,
+    get_shl_se_player_fetched_at,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -273,3 +281,183 @@ class PlayerMapper:
     def loaded_teams(self) -> List[str]:
         """List of SweHockey team names with loaded rosters."""
         return list(self._rosters.keys())
+
+
+# ---------------------------------------------------------------------------
+# Lazy singleton for TeamMapper
+# ---------------------------------------------------------------------------
+
+_team_mapper_instance: Optional[TeamMapper] = None
+
+
+def _get_team_mapper() -> TeamMapper:
+    """Get or create the module-level TeamMapper singleton (lazy initialization)."""
+    global _team_mapper_instance
+    if _team_mapper_instance is None:
+        _team_mapper_instance = TeamMapper.from_api()
+    return _team_mapper_instance
+
+
+# ---------------------------------------------------------------------------
+# Portrait download
+# ---------------------------------------------------------------------------
+
+
+def download_portrait(portrait_url: str, cache_dir: Path, team_code: str, jersey: int) -> Optional[str]:
+    """Download player portrait and save to cache/portraits/{team_code}_{jersey}.png.
+
+    Returns relative path from cache_dir if successful, None otherwise.
+    """
+    if not portrait_url:
+        return None
+
+    portraits_dir = cache_dir / "portraits"
+    portraits_dir.mkdir(parents=True, exist_ok=True)
+
+    relative_path = f"portraits/{team_code}_{jersey}.png"
+    dest = cache_dir / relative_path
+
+    try:
+        r = httpx.get(portrait_url, timeout=15, follow_redirects=True)
+        r.raise_for_status()
+        dest.write_bytes(r.content)
+        return relative_path
+    except Exception as exc:
+        _logger.warning("Failed to download portrait %s: %s", portrait_url, exc)
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Player data helpers
+# ---------------------------------------------------------------------------
+
+
+def _player_to_dict(player: ShlSePlayer, team_code: str, portrait_path: Optional[str]) -> dict:
+    """Convert ShlSePlayer + extras into the standard dict representation."""
+    return {
+        "first_name": player.first_name,
+        "last_name": player.last_name,
+        "full_name": player.full_name,
+        "jersey_number": player.jersey_number,
+        "nationality": player.nationality,
+        "position": player.position,
+        "position_code": player.position_code,
+        "portrait_url": f"/portraits/{team_code}_{player.jersey_number}.png" if portrait_path else "",
+        "team_code": team_code,
+        "shl_se_uuid": player.uuid,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Fetch functions (write to DB, used by poller / endpoints with force_refresh)
+# ---------------------------------------------------------------------------
+
+
+def fetch_shl_se_player(
+    season_id: int,
+    swehockey_team: str,
+    jersey: int,
+    cache_dir: Path,
+    force_refresh: bool = False,
+) -> Optional[dict]:
+    """Fetch player info from shl.se, cache portrait, persist in DB.
+
+    Returns dict with: first_name, last_name, full_name, jersey_number,
+    nationality, position, position_code, portrait_url, portrait_path, team_code, shl_se_uuid
+
+    If force_refresh=False and data exists in DB, returns cached.
+    If force_refresh=True, re-fetches from shl.se.
+    """
+    if not force_refresh:
+        cached = load_shl_se_player(cache_dir, season_id, swehockey_team, jersey)
+        if cached is not None:
+            return cached["data"]
+
+    mapper = _get_team_mapper()
+    shl_team = mapper.swehockey_to_shl_se(swehockey_team)
+    if not shl_team:
+        _logger.warning("fetch_shl_se_player: no shl.se team match for '%s'", swehockey_team)
+        return None
+
+    try:
+        roster = fetch_shl_se_roster(shl_team.uuid)
+    except Exception as exc:
+        _logger.error("fetch_shl_se_player: failed to fetch roster for %s: %s", shl_team.uuid, exc)
+        return None
+
+    player = next((p for p in roster if p.jersey_number == jersey), None)
+    if player is None:
+        _logger.warning("fetch_shl_se_player: jersey %d not found in %s roster", jersey, swehockey_team)
+        return None
+
+    portrait_path = download_portrait(player.portrait_url, cache_dir, shl_team.team_code, jersey)
+    data = _player_to_dict(player, shl_team.team_code, portrait_path)
+
+    save_shl_se_player(cache_dir, season_id, swehockey_team, jersey, data, portrait_path)
+    return data
+
+
+def fetch_shl_se_team_players(
+    season_id: int,
+    swehockey_team: str,
+    cache_dir: Path,
+    force_refresh: bool = False,
+) -> List[dict]:
+    """Fetch all players for a team from shl.se. Downloads all portraits."""
+    if not force_refresh:
+        cached = load_shl_se_team_players(cache_dir, season_id, swehockey_team)
+        if cached:
+            return [row["data"] for row in cached]
+
+    mapper = _get_team_mapper()
+    shl_team = mapper.swehockey_to_shl_se(swehockey_team)
+    if not shl_team:
+        _logger.warning("fetch_shl_se_team_players: no shl.se team match for '%s'", swehockey_team)
+        return []
+
+    try:
+        roster = fetch_shl_se_roster(shl_team.uuid)
+    except Exception as exc:
+        _logger.error("fetch_shl_se_team_players: failed to fetch roster for %s: %s", shl_team.uuid, exc)
+        return []
+
+    results: List[dict] = []
+    for player in roster:
+        if player.jersey_number <= 0:
+            continue
+        portrait_path = download_portrait(player.portrait_url, cache_dir, shl_team.team_code, player.jersey_number)
+        data = _player_to_dict(player, shl_team.team_code, portrait_path)
+        save_shl_se_player(cache_dir, season_id, swehockey_team, player.jersey_number, data, portrait_path)
+        results.append(data)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Get functions (read-only from DB, used by REST API)
+# ---------------------------------------------------------------------------
+
+
+def get_shl_se_player(
+    season_id: int,
+    swehockey_team: str,
+    jersey: int,
+    cache_dir: Path,
+) -> Optional[dict]:
+    """Read-only: get persisted player info from DB. Returns None if not fetched."""
+    cached = load_shl_se_player(cache_dir, season_id, swehockey_team, jersey)
+    if cached is None:
+        return None
+    return cached["data"]
+
+
+def get_shl_se_team_players(
+    season_id: int,
+    swehockey_team: str,
+    cache_dir: Path,
+) -> Optional[List[dict]]:
+    """Read-only: get all persisted players for a team. Returns None if not fetched."""
+    rows = load_shl_se_team_players(cache_dir, season_id, swehockey_team)
+    if not rows:
+        return None
+    return [row["data"] for row in rows]
