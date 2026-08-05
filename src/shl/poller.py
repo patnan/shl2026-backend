@@ -304,6 +304,11 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
                                 "overtime": entry.overtime,
                             },
                         )
+                        # Fetch game detail page for period/clock/scorer info.
+                        try:
+                            fetch_game(game_id, cache_dir, force_reparse=True)
+                        except Exception as exc:
+                            logger.warning("Failed to fetch game detail for %d: %s", game_id, exc)
                         changed_count += 1
 
             if changed_count > 0:
