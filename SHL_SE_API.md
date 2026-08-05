@@ -317,6 +317,10 @@ EliteProspects is **not practically scrapeable**:
 
 **Conclusion:** Contract and career history data requires either EP's paid API subscription or manual data entry.
 
+### Legacy monolith reference
+
+The old monolith project (`shl/`) at `app.nandorf.org:9449/shl/` had a working `eliteprospects` service that provided career data, contracts, player photos, and draft info to the Android app. This was never ported to shl2026-backend. Worth checking if that code used EP's paid API or scraped before Cloudflare was added.
+
 ## Team UUID mapping
 
 Retrieved from `/api/site/settings` → `teamsInSite`:
