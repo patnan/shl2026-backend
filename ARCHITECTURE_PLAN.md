@@ -83,6 +83,23 @@ Cadence: every 5 minutes.
 Method used:
 - [src/shl/standings.py](src/shl/standings.py) fetch_table(season_id, db_dir, force_reparse=False)
 
+### 5) Player Stats, Goalie Stats, Rosters
+
+Scraped from SweHockey stats pages. Low-frequency polling since this data changes infrequently.
+
+| Target type | Source URL | Cadence |
+|---|---|---|
+| `player_stats` | `/Players/Statistics/ScoringLeaders/{season_id}` | Every 2 hours |
+| `goalie_stats` | `/Players/Statistics/LeadingGoaliesSVS/{season_id}` | Every 2 hours |
+| `rosters` | `/Teams/Info/TeamRoster/{season_id}` | Every 24 hours |
+
+Methods:
+- [src/shl/stats.py](src/shl/stats.py) fetch_player_stats, fetch_goalie_stats, fetch_rosters
+
+### 6) Live Game Scores (TODO — new season)
+
+During game days, the AJAX fragment at `/StatPage/Live/{season_id}/` provides live scores and period info, refreshed every 20 seconds by SweHockey. Implementation deferred until the 2026-27 season starts (September 2026) when we can see the actual HTML structure during live games.
+
 ## DB Design
 
 Use current tables as base and extend.

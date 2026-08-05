@@ -36,11 +36,14 @@
 
 | Functionality | shl-se-backend | shl2026-backend |
 |---|---|---|
-| Team roster | `GET /players?team=&league=&season=` | — |
+| Scoring leaders | — | `GET /seasons/{id}/players` |
+| Scoring leaders by team | — | `GET /seasons/{id}/players?team=SKE` |
+| Goalie stats | — | `GET /seasons/{id}/goalies` |
+| Team roster | `GET /players?team=&league=&season=` | `GET /seasons/{id}/rosters?team=Brynäs IF` |
 | Player detail | `GET /players/{player_id}` | — |
 | Player stats | `GET /players/{player_id}/stats` | — |
 
-shl2026-backend has **no player/roster endpoints at all** yet.
+shl2026-backend now has player/goalie stats and rosters. Individual player detail pages are not yet implemented.
 
 ---
 
@@ -90,9 +93,9 @@ Entirely new capability in shl2026.
 
 ## Summary
 
-**shl2026-backend is stronger in:** richer game/standings data, more schedule query options, push notifications, rate limiting, data freshness metadata, and effectively live standings during games (30s refresh).
+**shl2026-backend is stronger in:** richer game/standings data, more schedule query options, push notifications, rate limiting, data freshness metadata, effectively live standings during games (30s refresh), player/goalie stats, and team rosters.
 
-**shl2026-backend is missing:** players/rosters (biggest gap), teams listing, multi-league support, and API discovery. Players and teams are the most critical functional gaps if this backend is meant to replace shl-se-backend.
+**shl2026-backend is missing:** individual player detail pages, multi-league support, and API discovery. Live game period/clock tracking is deferred until the new season starts.
 
 ---
 
@@ -547,10 +550,10 @@ The app points to `https://app.nandorf.org:9449/shl/` — this is the older mono
 | `geteventsbyteam/{key}` | `GET /games/{game_id}` actions | ✅ Good | App needs: time→`game_time`, type→`event_type`, team→`team_abbrev`, playerName→`players[0]`, description→reconstruct |
 | `livetable` | `GET /seasons/{id}/standings` | ✅ Good | Effectively live (30s refresh during games). All fields map except `movement` (default 0). Rename: w→wins, l→losses, otw+gwsw→otWins, otl+gwsl→otLosses, tp→points |
 | `live` | Schedule (scores) + `GET /games/{id}` (period/state) | ⚠️ Partial | Live scores available from schedule (30s refresh). Period/clock requires game detail polling for active games — infrastructure exists, needs wiring |
-| `playerstats` | **No equivalent** | ❌ Gap | Not in shl2026 |
-| `goaliestats` | **No equivalent** | ❌ Gap | Not in shl2026 |
-| `playerstatsbyteam` | **No equivalent** | ❌ Gap | Not in shl2026 |
-| `rosters/{league}/{team}` | **No equivalent** | ❌ Gap | Not in shl2026 |
+| `playerstats` | `GET /seasons/{id}/players` | ✅ Done | Scoring leaders with goals, assists, points, PIM, +/- |
+| `goaliestats` | `GET /seasons/{id}/goalies` | ✅ Done | GAA, SVS%, shutouts, wins, losses |
+| `playerstatsbyteam` | `GET /seasons/{id}/players?team=` | ✅ Done | Filter by team abbreviation |
+| `rosters/{league}/{team}` | `GET /seasons/{id}/rosters?team=` | ✅ Done | Full roster with jersey, position, birthdate, height, weight, nationality |
 | `eliteprospects` | **No equivalent** | ❌ Gap | Not in shl2026 |
 
 ### Game Details mapping (best match)

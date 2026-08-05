@@ -8,10 +8,15 @@ Code root: [src](src)
 
 - Parse a single game page into typed dataclasses.
 - Parse season schedule pages into typed schedule entries.
-- Persist games, schedules, and standings in SQLite.
+- Persist games, schedules, standings, player stats, goalie stats, and rosters in SQLite.
 - Compute standings from played games (effectively live during game days — recalculated every 30s from schedule data).
+- Standings movement tracking (position change compared to previous snapshot).
 - Fetch standings from SweHockey overview pages.
+- Scrape player scoring leaders from SweHockey.
+- Scrape goalie stats (save %, GAA, wins) from SweHockey.
+- Scrape team rosters from SweHockey.
 - Compare two game snapshots and detect scoring changes.
+- Push notifications for live score changes via FCM.
 - CLI support for scraping, overview validation preview, snapshot comparison, poller seeding/worker runs, and REST API serving.
 
 ## Data models
@@ -28,6 +33,9 @@ Key model types:
 - Game
 - ScheduleEntry
 - StandingsRow
+- PlayerStat
+- GoalieStat
+- RosterEntry
 - ScoreChangeResult
 
 ## Project modules
@@ -44,14 +52,20 @@ Key model types:
 - [src/shl/standings.py](src/shl/standings.py)
   Standings parser and standings calculator.
 
+- [src/shl/stats.py](src/shl/stats.py)
+  Player stats, goalie stats, and roster fetch/get functions.
+
 - [src/shl/store.py](src/shl/store.py)
-  SQLite persistence for games, schedule, and standings.
+  SQLite persistence for games, schedule, standings, player stats, goalie stats, and rosters.
 
 - [src/shl/helpers/extraction.py](src/shl/helpers/extraction.py)
   HTML fetch and extraction orchestration helpers.
 
 - [src/shl/helpers/parsing.py](src/shl/helpers/parsing.py)
   SweHockey-specific parsing logic for top stats and actions.
+
+- [src/shl/helpers/stats_parsing.py](src/shl/helpers/stats_parsing.py)
+  Parsers for player stats, goalie stats, and roster HTML pages.
 
 - [src/cli.py](src/cli.py)
   CLI entrypoint with scrape, validate, compare, serve, poller-seed, and poller-run commands.
@@ -66,6 +80,12 @@ Database tables created automatically:
 - games
 - schedule
 - standings
+- player_stats
+- goalie_stats
+- rosters
+- poll_targets / poll_state
+- domain_events
+- devices
 
 ## CLI usage
 
@@ -148,6 +168,11 @@ curl "http://127.0.0.1:8000/seasons/18263/games/today"
 curl "http://127.0.0.1:8000/seasons/18263/rounds"
 curl "http://127.0.0.1:8000/seasons/18263/rounds/played"
 curl "http://127.0.0.1:8000/seasons/18263/rounds/next"
+curl "http://127.0.0.1:8000/seasons/18263/players"
+curl "http://127.0.0.1:8000/seasons/18263/players?team=SKE"
+curl "http://127.0.0.1:8000/seasons/18263/goalies"
+curl "http://127.0.0.1:8000/seasons/18263/rosters"
+curl "http://127.0.0.1:8000/seasons/18263/rosters?team=Bryn%C3%A4s%20IF"
 curl "http://127.0.0.1:8000/games/1004308"
 ```
 

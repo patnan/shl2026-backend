@@ -224,6 +224,71 @@ Has `to_dict` for JSON serialisation.
 
 ---
 
+## PlayerStat
+
+One player row from the SweHockey scoring leaders page.
+
+| Field | Type | Description |
+|---|---|---|
+| `rank` | `int` | Scoring rank |
+| `jersey` | `int` | Jersey number |
+| `name` | `str` | Player name (Last, First) |
+| `team` | `str` | Team abbreviation (e.g. SKE, FRÖ) |
+| `position` | `str` | Position (CE, LW, RW, LD, RD) |
+| `games_played` | `int` | Games played |
+| `goals` | `int` | Goals scored |
+| `assists` | `int` | Assists |
+| `total_points` | `int` | Total points (G + A) |
+| `points_per_game` | `float` | Points per game average |
+| `penalty_minutes` | `int` | Penalty minutes |
+| `plus_minus` | `int` | Plus/minus (goals for minus goals against while on ice) |
+
+---
+
+## GoalieStat
+
+One goalie row from the SweHockey leading goalies page.
+
+| Field | Type | Description |
+|---|---|---|
+| `rank` | `int` | Ranking by save percentage |
+| `jersey` | `int` | Jersey number |
+| `name` | `str` | Goalie name (Last, First) |
+| `team` | `str` | Team abbreviation |
+| `games_played` | `int` | Games in roster |
+| `games_played_in` | `int` | Games actually played |
+| `minutes_in_play` | `str` | Minutes in play (MM:SS format) |
+| `shots_on_goal` | `int` | Shots faced |
+| `goals_against` | `int` | Goals allowed |
+| `goals_against_avg` | `float` | Goals against average |
+| `saves` | `int` | Total saves |
+| `save_percentage` | `float` | Save percentage |
+| `shutouts` | `int` | Shutouts |
+| `wins` | `int` | Wins |
+| `losses` | `int` | Losses |
+| `win_percentage` | `float` | Win percentage |
+
+---
+
+## RosterEntry
+
+One player row from the SweHockey team roster page.
+
+| Field | Type | Description |
+|---|---|---|
+| `team` | `str` | Full team name |
+| `jersey` | `int` | Jersey number |
+| `name` | `str` | Player name (Last, First) |
+| `birthdate` | `str` | Birth date (YYYY-MM-DD) |
+| `position` | `str` | Position (GK, LD, RD, CE, LW, RW) |
+| `handedness` | `str` | Stick hand (L/R) |
+| `height` | `int` | Height in cm |
+| `weight` | `int` | Weight in kg |
+| `nationality` | `str` | Nationality code (SWE, CZE, USA, etc.) |
+| `youth_club` | `str` | Youth club name |
+
+---
+
 ## ScoringEvent
 
 One team's scoring contribution within a `ScoreChangeResult`.
