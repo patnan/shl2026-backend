@@ -305,6 +305,18 @@ The following data is **not** exposed by the shl.se API:
 
 For career history and contract data, refer to [EliteProspects](https://www.eliteprospects.com) (which shl.se itself links to from player pages).
 
+### EliteProspects accessibility
+
+EliteProspects is **not practically scrapeable**:
+
+- ❌ **httpx/requests** → 403 Forbidden (Cloudflare blocks all non-browser requests)
+- ❌ **Playwright headless** → Stuck on "Just a moment..." Cloudflare challenge page
+- ❌ **Playwright headed** (with Xvfb) → Same result; Cloudflare Turnstile detects automation via browser fingerprinting (`navigator.webdriver = true`), Canvas/WebGL fingerprints, and lack of human input behavior
+- ❓ **playwright-stealth / undetected-chromedriver** → Cat-and-mouse game, unreliable, violates EP ToS
+- 💰 **EliteProspects API** (paid) → `developer.eliteprospects.com` — the only reliable and legal option
+
+**Conclusion:** Contract and career history data requires either EP's paid API subscription or manual data entry.
+
 ## Team UUID mapping
 
 Retrieved from `/api/site/settings` → `teamsInSite`:
