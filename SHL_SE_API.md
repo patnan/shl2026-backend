@@ -386,6 +386,55 @@ swh_name = team_mapper.shl_se_to_swehockey(shl_team, swehockey_team_names)
 
 The team matching algorithm uses shl.se's `teamNames.short` (e.g. "Frölunda", "Skellefteå") which is always a substring of SweHockey's full name (e.g. "Frölunda HC", "Skellefteå AIK"). No hardcoded mapping needed.
 
+### REST API endpoints (our backend)
+
+The shl.se data is exposed through our API with local portrait caching:
+
+```
+# Get single player by SweHockey team name + jersey number
+GET /seasons/{season_id}/shl-se/players/{team}/{jersey}
+
+# Get all players for a team
+GET /seasons/{season_id}/shl-se/players/{team}
+
+# Force refresh from shl.se (re-downloads portraits)
+GET /seasons/{season_id}/shl-se/players/{team}/{jersey}?force_refresh=true
+GET /seasons/{season_id}/shl-se/players/{team}?force_refresh=true
+
+# Portraits served as static files
+GET /portraits/{team_code}_{jersey}.png
+```
+
+Example:
+```bash
+# Get Oscar Lindberg's info + portrait
+curl "http://127.0.0.1:8000/seasons/20961/shl-se/players/Skellefte%C3%A5%20AIK/24"
+
+# Response:
+# {
+#   "data": {
+#     "first_name": "Oscar",
+#     "last_name": "Lindberg",
+#     "full_name": "Oscar Lindberg",
+#     "jersey_number": 24,
+#     "nationality": "SE",
+#     "position": "Forwards",
+#     "position_code": "F",
+#     "team_code": "SAIK",
+#     "shl_se_uuid": "qQ9-322eZcouc",
+#     "portrait_url": "/portraits/SAIK_24.png"
+#   },
+#   "meta": {"season_id": "20961", "source_fetched_at": "...", "generated_at": "..."}
+# }
+
+# Get portrait image
+curl "http://127.0.0.1:8000/portraits/SAIK_24.png" -o lindberg.png
+```
+
+Data is fetched on-demand (first request triggers download) and cached in:
+- SQLite: `shl_se_players` table (season_id, team, jersey → player JSON + portrait path)
+- Disk: `cache/portraits/{team_code}_{jersey}.png`
+
 ### Data comparison
 
 | Data | SweHockey (stats.swehockey.se) | SHL.se API |

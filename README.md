@@ -182,6 +182,9 @@ curl "http://127.0.0.1:8000/seasons/18263/goalies"
 curl "http://127.0.0.1:8000/seasons/18263/rosters"
 curl "http://127.0.0.1:8000/seasons/18263/rosters?team=Bryn%C3%A4s%20IF"
 curl "http://127.0.0.1:8000/games/1004308"
+curl "http://127.0.0.1:8000/seasons/20961/shl-se/players/Skellefte%C3%A5%20AIK"
+curl "http://127.0.0.1:8000/seasons/20961/shl-se/players/Skellefte%C3%A5%20AIK/24"
+curl "http://127.0.0.1:8000/portraits/SAIK_24.png"
 ```
 
 ## Start scripts
