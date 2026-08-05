@@ -206,6 +206,105 @@ Live game data uses SSE via an internal Kubernetes service (`game-broadcaster.s8
 
 During live games, the frontend connects via EventSource to `game-broadcaster.s8y.se`.
 
+## Player details
+
+### Profile page
+
+`GET /api/statistics-v2/athlete/profile-page?playerUuid={uuid}`
+
+```json
+{
+  "uuid": "qQ9-322eZcouc",
+  "fullName": "Oscar Lindberg",
+  "firstName": "Oscar",
+  "lastName": "Lindberg",
+  "birthDate": "1991-10-29",
+  "nationality": "SE",
+  "gender": "male",
+  "age": {"value": 33, "format": "years"},
+  "weight": {"value": 88, "format": "kg"},
+  "height": {"value": 183, "format": "cm"},
+  "jerseyNumber": 24,
+  "position": "Forward",
+  "positionCode": "F",
+  "shoots": "L",
+  "team": {
+    "uuid": "50e6-50e6DYeWM",
+    "instanceId": "ske1_ske",
+    "name": "Skellefteå",
+    "code": "SAIK",
+    "media": "https://sportality.cdn.s8y.se/team-logos/ske1_ske.svg"
+  },
+  "seasonStats": [
+    {"field": "GP", "value": 52},
+    {"field": "TP", "value": 67},
+    {"field": "G", "value": 30},
+    {"field": "A", "value": 37}
+  ],
+  "careerStats": [
+    {"field": "GP", "value": 300},
+    {"field": "TP", "value": 250},
+    {"field": "G", "value": 120},
+    {"field": "A", "value": 130}
+  ],
+  "statisticsProvider": "statnet",
+  "isInSquad": true,
+  "media": {"url": "https://s8y-cdn-sp-photos.imgix.net/...", "srcset": "..."}
+}
+```
+
+### Athlete details (bio/physical)
+
+`GET /api/sports-v2/athlete-details/{playerUuid}`
+
+```json
+{
+  "athleteData": {
+    "uuid": "qQ9-322eZcouc",
+    "firstName": "Oscar",
+    "lastName": "Lindberg",
+    "dateOfBirth": "1991-10-29",
+    "nationality": "SE",
+    "height": 183,
+    "weight": 88,
+    "gender": "",
+    "shoots": null,
+    "playerExtIds": [
+      {"id": 743, "extId": "3191", "extIdType": {"code": "ramses_legacy"}},
+      {"id": 744, "extId": "1552", "extIdType": {"code": "isa"}}
+    ]
+  }
+}
+```
+
+### Season list (years active in SHL)
+
+`GET /api/statistics-v2/athlete/seasonList?playerUuid={uuid}`
+
+```json
+[
+  {"value": "2025", "name": "2025/2026", "label": "2025/2026"},
+  {"value": "2024", "name": "2024/2025", "label": "2024/2025"},
+  {"value": "2012", "name": "2012/2013", "label": "2012/2013"},
+  {"value": "2011", "name": "2011/2012", "label": "2011/2012"},
+  {"value": "2010", "name": "2010/2011", "label": "2010/2011"},
+  {"value": "2009", "name": "2009/2010", "label": "2009/2010"}
+]
+```
+
+Note: gaps in years (2013–2023 for Lindberg) indicate time outside SHL (NHL, KHL, etc.) but the API does NOT provide info about those stints.
+
+## Data NOT available
+
+The following data is **not** exposed by the shl.se API:
+
+- **Contract information** — No fields for contract length, salary, free agent status, or contract expiry.
+- **Previous clubs / transfer history** — No endpoint showing "played for team X in 2015–2018". The season list shows *which years* a player was in SHL, but not which team per season.
+- **NHL/international career** — Gaps in the season list indicate time outside SHL, but no details.
+- **Draft information** — No NHL draft data.
+
+For career history and contract data, refer to [EliteProspects](https://www.eliteprospects.com) (which shl.se itself links to from player pages).
+
 ## Team UUID mapping
 
 Retrieved from `/api/site/settings` → `teamsInSite`:
