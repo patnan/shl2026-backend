@@ -188,7 +188,7 @@ def cmd_snapshot(args: argparse.Namespace, cache_dir: Path) -> None:
         path_parts = [p for p in parsed.path.strip("/").split("/") if p]
         name_base = "_".join(path_parts) if path_parts else "page"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out = cache_dir / "snapshots" / f"{name_base}_{timestamp}.html"
+        out = Path("snapshots") / f"{name_base}_{timestamp}.html"
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
