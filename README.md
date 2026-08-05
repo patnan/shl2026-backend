@@ -6,6 +6,8 @@ Code root: [src](src)
 
 **Getting started?** See [GETTING_STARTED.md](GETTING_STARTED.md).
 
+**API contract:** See [openapi.yaml](openapi.yaml) — the single source of truth for all endpoints and data types. See [OPENAPI.md](OPENAPI.md) for how to generate clients from it.
+
 ## Implemented capabilities
 
 - Parse a single game page into typed dataclasses.
