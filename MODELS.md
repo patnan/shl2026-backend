@@ -350,3 +350,71 @@ An event written to the outbox table for downstream processing (e.g. notificatio
 | `payload` | `Dict` | Event-specific data |
 | `created_at` | `Optional[str]` | ISO timestamp |
 | `processed_at` | `Optional[str]` | ISO timestamp when consumed (None if pending) |
+
+---
+
+## ShlSeTeam
+
+Team data from shl.se (Sportality platform). Used for mapping SweHockey team names to shl.se resources.
+
+Defined in: [src/shl/shl_se.py](src/shl/shl_se.py)
+
+| Field | Type | Description |
+|---|---|---|
+| `uuid` | `str` | shl.se team UUID |
+| `team_code` | `str` | Short team code (e.g. "BIF", "SAIK", "FHC") |
+| `instance_id` | `str` | Sportality instance ID |
+| `name_short` | `str` | Short name used for substring matching (e.g. "Brynäs", "Skellefteå") |
+| `name_long` | `str` | Long name (e.g. "Brynäs IF", "Skellefteå AIK") |
+| `name_full` | `str` | Full official name |
+| `logo_url` | `str` | Team logo URL |
+
+Has `from_api(data: dict)` class method for constructing from shl.se API response.
+
+---
+
+## ShlSePlayer
+
+Player data from shl.se. Enriches SweHockey data with portraits, UUIDs, and detailed position info.
+
+Defined in: [src/shl/shl_se.py](src/shl/shl_se.py)
+
+| Field | Type | Description |
+|---|---|---|
+| `uuid` | `str` | shl.se player UUID |
+| `first_name` | `str` | First name |
+| `last_name` | `str` | Last name |
+| `full_name` | `str` | Full display name |
+| `jersey_number` | `int` | Jersey number |
+| `nationality` | `str` | Two-letter country code (e.g. "SE", "FI") |
+| `position` | `str` | Position group in Swedish (e.g. "Backar", "Forwards", "Målvakter") |
+| `position_code` | `str` | Position code: "F" (forward), "D" (defense), "GK" (goalie) |
+| `portrait_url` | `str` | URL to player portrait image on shl.se CDN (empty if unavailable) |
+
+---
+
+## TeamMapper
+
+Maps between SweHockey team names and shl.se team data. Uses substring matching (shl.se short name ⊂ SweHockey full name) with a normalized-space fallback for edge cases like "HV 71" vs "HV71".
+
+Defined in: [src/shl/shl_se.py](src/shl/shl_se.py)
+
+Key methods:
+- `from_api()` — create from live shl.se API
+- `swehockey_to_shl_se(name)` → `Optional[ShlSeTeam]`
+- `shl_se_to_swehockey(team, names)` → `Optional[str]`
+- `get_team_by_code(code)` → `Optional[ShlSeTeam]`
+
+---
+
+## PlayerMapper
+
+Maps SweHockey players to shl.se player data using (team_name, jersey_number) as key. Loads team rosters on demand.
+
+Defined in: [src/shl/shl_se.py](src/shl/shl_se.py)
+
+Key methods:
+- `load_team(swehockey_team_name)` → `bool`
+- `find(swehockey_team_name, jersey_number)` → `Optional[ShlSePlayer]`
+- `get_portrait_url(swehockey_team_name, jersey_number)` → `Optional[str]`
+- `get_team_logo_url(swehockey_team_name)` → `Optional[str]`

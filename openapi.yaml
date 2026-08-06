@@ -250,6 +250,104 @@ paths:
         '404':
           description: Team info not yet fetched
 
+  /seasons/{season_id}/shl-se/players/{team}:
+    get:
+      operationId: getShlSeTeamPlayers
+      summary: All shl.se players for a team (with portraits)
+      description: |
+        Returns enriched player data from shl.se including portraits, UUIDs,
+        nationality, and position. Data is fetched on-demand if not cached.
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+          description: SweHockey team name (e.g. "Skellefteå AIK")
+          example: "Brynäs IF"
+        - name: force_refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Force re-fetch from shl.se (ignores cache)
+      responses:
+        "200":
+          description: Team player list from shl.se
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShlSeTeamPlayersResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /seasons/{season_id}/shl-se/players/{team}/{jersey}:
+    get:
+      operationId: getShlSePlayer
+      summary: Single player info from shl.se by team + jersey
+      description: |
+        Returns enriched player data from shl.se for a specific player identified
+        by team name and jersey number. Fetched on-demand if not cached.
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+          description: SweHockey team name
+          example: "Brynäs IF"
+        - name: jersey
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Player jersey number
+          example: 3
+        - name: force_refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Force re-fetch from shl.se (ignores cache)
+      responses:
+        "200":
+          description: Player info from shl.se
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShlSePlayerResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /portraits/{filename}:
+    get:
+      operationId: getPortrait
+      summary: Player portrait image
+      description: |
+        Static file serving of cached player portrait images.
+        Filename format: {team_code}_{jersey}.png (e.g. BIF_3.png).
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "BIF_3.png"
+      responses:
+        "200":
+          description: Portrait image (PNG)
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Portrait not found
+
   /games/{game_id}:
     get:
       operationId: getGameDetail
@@ -747,3 +845,64 @@ components:
                 $ref: "#/components/schemas/Action"
         meta:
           $ref: "#/components/schemas/Meta"
+
+    ShlSePlayer:
+      type: object
+      description: Enriched player data from shl.se
+      properties:
+        first_name:
+          type: string
+          example: "Christian"
+        last_name:
+          type: string
+          example: "Djoos"
+        full_name:
+          type: string
+          example: "Christian Djoos"
+        jersey_number:
+          type: integer
+          example: 3
+        nationality:
+          type: string
+          example: "SE"
+        position:
+          type: string
+          example: "Backar"
+        position_code:
+          type: string
+          enum: ["F", "D", "GK"]
+          example: "D"
+        portrait_url:
+          type: string
+          description: Relative URL to cached portrait image (empty if unavailable)
+          example: "/portraits/BIF_3.png"
+        team_code:
+          type: string
+          example: "BIF"
+        shl_se_uuid:
+          type: string
+          example: "qQ9-0473YO4F2"
+
+    ShlSePlayerResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/ShlSePlayer"
+        meta:
+          $ref: "#/components/schemas/Meta"
+
+    ShlSeTeamPlayersResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShlSePlayer"
+        meta:
+          allOf:
+            - $ref: "#/components/schemas/Meta"
+            - type: object
+              properties:
+                count:
+                  type: integer
+                  description: Number of players returned

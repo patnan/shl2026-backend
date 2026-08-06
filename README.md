@@ -41,6 +41,8 @@ Key model types:
 - PlayerStat
 - GoalieStat
 - RosterEntry
+- ShlSeTeam
+- ShlSePlayer
 - ScoreChangeResult
 
 ## Project modules
