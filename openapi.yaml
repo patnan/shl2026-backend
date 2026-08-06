@@ -200,28 +200,6 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /seasons/{season_id}/rosters:
-    get:
-      operationId: getRosters
-      summary: Team rosters
-      parameters:
-        - $ref: "#/components/parameters/SeasonId"
-        - name: team
-          in: query
-          required: false
-          description: Filter by full team name (e.g. Brynäs IF)
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Player rosters for all teams (or filtered)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RostersResponse"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
   /seasons/{season_id}/teams:
     get:
       summary: List teams with abbreviations for a season
@@ -250,13 +228,14 @@ paths:
         '404':
           description: Team info not yet fetched
 
-  /seasons/{season_id}/shl-se/players/{team}:
+  /seasons/{season_id}/players/{team}/{jersey}/stats:
     get:
-      operationId: getShlSeTeamPlayers
-      summary: All shl.se players for a team (with portraits)
+      operationId: getPlayerStats
+      summary: Dynamic game stats for a single player
       description: |
-        Returns enriched player data from shl.se including portraits, UUIDs,
-        nationality, and position. Data is fetched on-demand if not cached.
+        Returns detailed game statistics for a player from the SweHockey PlayersByTeam page.
+        Data is fetched on demand (not cached long-term) since stats change frequently.
+        Includes GP, G, A, TP, PIM, +/-, GWG, PPG, SHG, SOG, SG%, faceoffs.
       parameters:
         - $ref: "#/components/parameters/SeasonId"
         - name: team
@@ -264,40 +243,7 @@ paths:
           required: true
           schema:
             type: string
-          description: SweHockey team name (e.g. "Skellefteå AIK")
-          example: "Brynäs IF"
-        - name: force_refresh
-          in: query
-          required: false
-          schema:
-            type: boolean
-            default: false
-          description: Force re-fetch from shl.se (ignores cache)
-      responses:
-        "200":
-          description: Team player list from shl.se
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ShlSeTeamPlayersResponse"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
-  /seasons/{season_id}/shl-se/players/{team}/{jersey}:
-    get:
-      operationId: getShlSePlayer
-      summary: Single player info from shl.se by team + jersey
-      description: |
-        Returns enriched player data from shl.se for a specific player identified
-        by team name and jersey number. Fetched on-demand if not cached.
-      parameters:
-        - $ref: "#/components/parameters/SeasonId"
-        - name: team
-          in: path
-          required: true
-          schema:
-            type: string
-          description: SweHockey team name
+          description: SweHockey team name (e.g. "Brynäs IF")
           example: "Brynäs IF"
         - name: jersey
           in: path
@@ -306,22 +252,81 @@ paths:
             type: integer
           description: Player jersey number
           example: 3
-        - name: force_refresh
-          in: query
-          required: false
-          schema:
-            type: boolean
-            default: false
-          description: Force re-fetch from shl.se (ignores cache)
       responses:
         "200":
-          description: Player info from shl.se
+          description: Player game statistics
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ShlSePlayerResponse"
+                $ref: "#/components/schemas/PlayerStatsResponse"
         "404":
           $ref: "#/components/responses/NotFound"
+        "502":
+          description: Failed to fetch stats from upstream
+
+  /seasons/{season_id}/players/{team}/{jersey}:
+    get:
+      operationId: getMergedPlayerDetail
+      summary: Single player with merged SweHockey roster + shl.se data
+      description: |
+        Returns a combined view of a player, merging SweHockey roster data
+        (birthdate, height, weight, handedness, youth club) with shl.se enrichment
+        (portrait URL, team code, shl.se UUID). Both sources are lazy-loaded on demand.
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+          description: SweHockey team name (e.g. "Brynäs IF")
+          example: "Brynäs IF"
+        - name: jersey
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Player jersey number
+          example: 3
+      responses:
+        "200":
+          description: Merged player detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergedPlayerResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          description: Failed to fetch data from upstream
+
+  /seasons/{season_id}/players/{team}:
+    get:
+      operationId: getMergedTeamPlayers
+      summary: All players for a team with merged SweHockey + shl.se data
+      description: |
+        Returns all players on a team roster, merging SweHockey roster data with
+        shl.se enrichment (portraits, UUIDs). Both sources are lazy-loaded on demand.
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+          description: SweHockey team name (e.g. "Brynäs IF")
+          example: "Brynäs IF"
+      responses:
+        "200":
+          description: Merged team player list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergedTeamPlayersResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "502":
+          description: Failed to fetch roster data from upstream
 
   /portraits/{filename}:
     get:
@@ -796,16 +801,6 @@ components:
         meta:
           $ref: "#/components/schemas/Meta"
 
-    RostersResponse:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/RosterEntry"
-        meta:
-          $ref: "#/components/schemas/Meta"
-
     RoundsResponse:
       type: object
       properties:
@@ -846,58 +841,79 @@ components:
         meta:
           $ref: "#/components/schemas/Meta"
 
-    ShlSePlayer:
+    MergedPlayer:
       type: object
-      description: Enriched player data from shl.se
+      description: Combined player data from SweHockey roster and shl.se
       properties:
+        team:
+          type: string
+          example: "Brynäs IF"
+        jersey:
+          type: integer
+          example: 3
+        name:
+          type: string
+          example: "Djoos, Christian"
+        birthdate:
+          type: string
+          format: date
+          example: "1994-08-06"
+        position:
+          type: string
+          example: "RD"
+        handedness:
+          type: string
+          enum: ["L", "R"]
+        height:
+          type: integer
+          description: Height in cm
+          example: 181
+        weight:
+          type: integer
+          description: Weight in kg
+          example: 82
+        nationality:
+          type: string
+          example: "SWE"
+        youth_club:
+          type: string
+          example: "Brynäs IF"
         first_name:
           type: string
+          description: From shl.se (empty if unavailable)
           example: "Christian"
         last_name:
           type: string
+          description: From shl.se (empty if unavailable)
           example: "Djoos"
-        full_name:
-          type: string
-          example: "Christian Djoos"
-        jersey_number:
-          type: integer
-          example: 3
-        nationality:
-          type: string
-          example: "SE"
-        position:
-          type: string
-          example: "Backar"
-        position_code:
-          type: string
-          enum: ["F", "D", "GK"]
-          example: "D"
         portrait_url:
           type: string
           description: Relative URL to cached portrait image (empty if unavailable)
           example: "/portraits/BIF_3.png"
         team_code:
           type: string
+          description: Short team code from shl.se (empty if unavailable)
           example: "BIF"
         shl_se_uuid:
           type: string
+          description: Player UUID on shl.se (empty if unavailable)
           example: "qQ9-0473YO4F2"
 
-    ShlSePlayerResponse:
+    MergedPlayerResponse:
       type: object
       properties:
         data:
-          $ref: "#/components/schemas/ShlSePlayer"
+          $ref: "#/components/schemas/MergedPlayer"
         meta:
           $ref: "#/components/schemas/Meta"
 
-    ShlSeTeamPlayersResponse:
+    MergedTeamPlayersResponse:
       type: object
       properties:
         data:
           type: array
           items:
-            $ref: "#/components/schemas/ShlSePlayer"
+            $ref: "#/components/schemas/MergedPlayer"
         meta:
           allOf:
             - $ref: "#/components/schemas/Meta"
@@ -906,3 +922,79 @@ components:
                 count:
                   type: integer
                   description: Number of players returned
+
+    TeamPlayerStat:
+      type: object
+      description: Dynamic game statistics for a player from PlayersByTeam
+      properties:
+        team:
+          type: string
+          example: "Brynäs IF"
+        rank:
+          type: integer
+        jersey:
+          type: integer
+          example: 3
+        name:
+          type: string
+          example: "Djoos, Christian"
+        position:
+          type: string
+          example: "RD"
+        games_played:
+          type: integer
+        goals:
+          type: integer
+        assists:
+          type: integer
+        total_points:
+          type: integer
+        penalty_minutes:
+          type: integer
+        plus:
+          type: integer
+          description: Goals for while on ice
+        minus:
+          type: integer
+          description: Goals against while on ice
+        plus_minus:
+          type: integer
+        gwg:
+          type: integer
+          description: Game-winning goals
+        ppg:
+          type: integer
+          description: Power-play goals
+        shg:
+          type: integer
+          description: Short-handed goals
+        sog:
+          type: integer
+          description: Shots on goal
+        sg_pct:
+          type: number
+          format: float
+          nullable: true
+          description: Shooting percentage (null if N/A)
+        fo_won:
+          type: integer
+          description: Faceoffs won
+        fo_lost:
+          type: integer
+          description: Faceoffs lost
+        fo_total:
+          type: integer
+          description: Total faceoffs
+        fo_pct:
+          type: number
+          format: float
+          nullable: true
+          description: Faceoff win percentage (null if N/A)
+
+    PlayerStatsResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/TeamPlayerStat"
+        meta:
+          $ref: "#/components/schemas/Meta"

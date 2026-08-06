@@ -18,8 +18,9 @@ Code root: [src](src)
 - Fetch standings from SweHockey overview pages.
 - Scrape player scoring leaders from SweHockey.
 - Scrape goalie stats (save %, GAA, wins) from SweHockey.
-- Scrape team rosters from SweHockey.
+- Scrape team rosters and per-player game stats (GP, G, A, TP, PIM, +/-, GWG, PPG, SHG, SOG, SG%, FO) from SweHockey.
 - Scrape team abbreviations dynamically from SweHockey roster page navigation.
+- Enrich player data with portraits and shl.se UUIDs via shl.se API.
 - Compare two game snapshots and detect scoring changes.
 - Push notifications for live score changes via FCM.
 - CLI support for scraping, overview validation preview, snapshot comparison, poller seeding/worker runs, and REST API serving.
@@ -181,11 +182,10 @@ curl "http://127.0.0.1:8000/seasons/18263/rounds/next"
 curl "http://127.0.0.1:8000/seasons/18263/players"
 curl "http://127.0.0.1:8000/seasons/18263/players?team=SKE"
 curl "http://127.0.0.1:8000/seasons/18263/goalies"
-curl "http://127.0.0.1:8000/seasons/18263/rosters"
-curl "http://127.0.0.1:8000/seasons/18263/rosters?team=Bryn%C3%A4s%20IF"
+curl "http://127.0.0.1:8000/seasons/18263/players/Bryn%C3%A4s%20IF"
+curl "http://127.0.0.1:8000/seasons/18263/players/Bryn%C3%A4s%20IF/3"
+curl "http://127.0.0.1:8000/seasons/18263/players/Bryn%C3%A4s%20IF/3/stats"
 curl "http://127.0.0.1:8000/games/1004308"
-curl "http://127.0.0.1:8000/seasons/20961/shl-se/players/Skellefte%C3%A5%20AIK"
-curl "http://127.0.0.1:8000/seasons/20961/shl-se/players/Skellefte%C3%A5%20AIK/24"
 curl "http://127.0.0.1:8000/portraits/SAIK_24.png"
 ```
 

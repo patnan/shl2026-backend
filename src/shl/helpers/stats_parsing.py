@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import re
-from typing import List
+from typing import List, Optional
 
 from bs4 import BeautifulSoup
 
-from src.shl.models import GoalieStat, PlayerStat, RosterEntry, TeamInfo
+from src.shl.models import GoalieStat, PlayerStat, RosterEntry, TeamInfo, TeamPlayerStat
 
 
 def _parse_int(value: str, default: int = 0) -> int:
@@ -221,5 +221,124 @@ def parse_team_abbreviations(html: str) -> List[TeamInfo]:
         if not team_name:
             continue
         results.append(TeamInfo(team=team_name, abbreviation=fragment))
+
+    return results
+
+
+def _parse_pct(value: str) -> Optional[float]:
+    """Parse a percentage value like '11. 54', '0. 00', or 'N/A'.
+
+    SweHockey inserts spaces in decimal numbers (e.g. '11. 54' instead of '11.54').
+    Returns None for non-numeric values.
+    """
+    cleaned = value.replace(" ", "").strip()
+    if not cleaned or cleaned.upper() == "N/A" or cleaned == "-":
+        return None
+    try:
+        return float(cleaned.replace(",", "."))
+    except (ValueError, AttributeError):
+        return None
+
+
+def parse_players_by_team(html: str) -> List[TeamPlayerStat]:
+    """Parse the PlayersByTeam page into a list of TeamPlayerStat.
+
+    The page has multiple tables (one per team), each with class 'tblContent'.
+    Above each table is a team header. The columns are:
+    Rk, No, Name, Pos, GP, G, A, TP, PIM, +, -, +/-, GWG, PPG, SHG, SOG, SG%, FO+, FO-, FO, FO%
+
+    The page also contains a Goalkeeping Statistics section which we skip.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    tables = soup.find_all("table", class_="tblContent")
+    if not tables:
+        return []
+
+    results: List[TeamPlayerStat] = []
+
+    for table in tables:
+        rows = table.find_all("tr")
+        if not rows:
+            continue
+
+        # Determine team name from the first row(s) of the table.
+        team_name = ""
+        header_row_idx = -1
+
+        for i, row in enumerate(rows):
+            cells = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
+            if not cells:
+                continue
+
+            # Detect header row by looking for "Rk" or "No" or "GP" in cells
+            cell_text = " ".join(cells)
+            if "Rk" in cells and ("GP" in cells or "No" in cells):
+                header_row_idx = i
+                break
+
+            # Check for goalkeeping section markers
+            if "Goalkeeping Statistics" in cell_text or "GAA" in cells or "SVS%" in cells:
+                break
+
+            # The team name is in the first row; only set it once
+            if not team_name:
+                for cell in cells:
+                    if cell and cell != "[Top]" and "Goalkeeping" not in cell and "Playing" not in cell:
+                        team_name = cell
+                        break
+
+        # If this is a goalkeeping table, skip it
+        all_text = table.get_text()
+        if "Goalkeeping Statistics" in all_text and header_row_idx == -1:
+            continue
+
+        if not team_name or header_row_idx == -1:
+            # Try to detect if this is a goalie table by looking for GAA/SVS% columns
+            for row in rows:
+                cells = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
+                if "GAA" in cells or "SVS%" in cells:
+                    break
+            else:
+                # Neither a player table nor a goalie table - skip
+                pass
+            continue
+
+        # Parse player data rows (after the header)
+        for row in rows[header_row_idx + 1:]:
+            cells = [td.get_text(strip=True) for td in row.find_all("td")]
+            if len(cells) < 21:
+                continue
+
+            # First cell (Rk) should be numeric for data rows
+            if not cells[0].isdigit():
+                continue
+
+            # Clean up the name (may have ** from bold formatting)
+            name = cells[2].replace("**", "").strip()
+
+            results.append(TeamPlayerStat(
+                team=team_name,
+                rank=_parse_int(cells[0]),
+                jersey=_parse_int(cells[1]),
+                name=name,
+                position=cells[3],
+                games_played=_parse_int(cells[4]),
+                goals=_parse_int(cells[5]),
+                assists=_parse_int(cells[6]),
+                total_points=_parse_int(cells[7]),
+                penalty_minutes=_parse_int(cells[8]),
+                plus=_parse_int(cells[9]),
+                minus=_parse_int(cells[10]),
+                plus_minus=_parse_int(cells[11]),
+                gwg=_parse_int(cells[12]),
+                ppg=_parse_int(cells[13]),
+                shg=_parse_int(cells[14]),
+                sog=_parse_int(cells[15]),
+                sg_pct=_parse_pct(cells[16]),
+                fo_won=_parse_int(cells[17]),
+                fo_lost=_parse_int(cells[18]),
+                fo_total=_parse_int(cells[19]),
+                fo_pct=_parse_pct(cells[20]),
+            ))
 
     return results

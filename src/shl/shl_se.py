@@ -408,9 +408,10 @@ def fetch_shl_se_team_players(
     force_refresh: bool = False,
 ) -> List[dict]:
     """Fetch all players for a team from shl.se. Downloads all portraits."""
+    _MIN_ROSTER_SIZE = 5  # A real roster has 20+; fewer means incomplete cache.
     if not force_refresh:
         cached = load_shl_se_team_players(cache_dir, season_id, swehockey_team)
-        if cached:
+        if cached and len(cached) >= _MIN_ROSTER_SIZE:
             return [row["data"] for row in cached]
 
     try:

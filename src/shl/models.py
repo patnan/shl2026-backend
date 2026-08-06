@@ -421,6 +421,62 @@ class TeamInfo:
 
 
 @dataclass(frozen=True)
+class TeamPlayerStat:
+    team: str
+    rank: int
+    jersey: int
+    name: str
+    position: str
+    games_played: int
+    goals: int
+    assists: int
+    total_points: int
+    penalty_minutes: int
+    plus: int
+    minus: int
+    plus_minus: int
+    gwg: int
+    ppg: int
+    shg: int
+    sog: int
+    sg_pct: Optional[float]
+    fo_won: int
+    fo_lost: int
+    fo_total: int
+    fo_pct: Optional[float]
+
+    @classmethod
+    def from_dict(cls, d: Dict) -> TeamPlayerStat:
+        return cls(
+            team=d["team"],
+            rank=d["rank"],
+            jersey=d["jersey"],
+            name=d["name"],
+            position=d["position"],
+            games_played=d["games_played"],
+            goals=d["goals"],
+            assists=d["assists"],
+            total_points=d["total_points"],
+            penalty_minutes=d["penalty_minutes"],
+            plus=d["plus"],
+            minus=d["minus"],
+            plus_minus=d["plus_minus"],
+            gwg=d["gwg"],
+            ppg=d["ppg"],
+            shg=d["shg"],
+            sog=d["sog"],
+            sg_pct=d.get("sg_pct"),
+            fo_won=d["fo_won"],
+            fo_lost=d["fo_lost"],
+            fo_total=d["fo_total"],
+            fo_pct=d.get("fo_pct"),
+        )
+
+    def to_dict(self) -> Dict:
+        return dataclasses.asdict(self)
+
+
+@dataclass(frozen=True)
 class PenaltyMetadata:
     clean_player_text: str
     players: List[str]

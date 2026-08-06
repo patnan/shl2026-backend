@@ -178,11 +178,24 @@ class TestTeamsEndpoint:
         from src.shl.rest_api import create_app
         return TestClient(create_app(tmp_path))
 
-    def test_returns_404_when_not_fetched(self, monkeypatch, client):
+    def test_returns_502_when_fetch_fails(self, monkeypatch, client):
         monkeypatch.setattr("src.shl.rest_api.get_team_info", lambda season_id, cache_dir: None)
+        monkeypatch.setattr("src.shl.rest_api.fetch_team_info", lambda season_id, cache_dir: (_ for _ in ()).throw(RuntimeError("upstream down")))
         response = client.get("/seasons/20961/teams")
-        assert response.status_code == 404
-        assert "not yet fetched" in response.json()["error"]
+        assert response.status_code == 502
+        assert "Failed to fetch" in response.json()["error"]
+
+    def test_lazy_loads_when_not_cached(self, monkeypatch, client):
+        teams = [
+            TeamInfo(team="Brynäs IF", abbreviation="BIF"),
+        ]
+        monkeypatch.setattr("src.shl.rest_api.get_team_info", lambda season_id, cache_dir: None)
+        monkeypatch.setattr("src.shl.rest_api.fetch_team_info", lambda season_id, cache_dir: teams)
+        monkeypatch.setattr("src.shl.rest_api.get_team_info_fetched_at", lambda cache_dir, season_id: "2026-08-06T12:00:00")
+        response = client.get("/seasons/20961/teams")
+        assert response.status_code == 200
+        assert len(response.json()["data"]) == 1
+        assert response.json()["data"][0]["abbreviation"] == "BIF"
 
     def test_returns_team_list(self, monkeypatch, client):
         teams = [

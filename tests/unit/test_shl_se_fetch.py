@@ -194,11 +194,14 @@ class TestFetchShlSeTeamPlayers:
         cached = [
             {"data": {"full_name": "Player A", "jersey_number": 3}, "fetched_at": "2026-01-01"},
             {"data": {"full_name": "Player B", "jersey_number": 31}, "fetched_at": "2026-01-01"},
+            {"data": {"full_name": "Player C", "jersey_number": 10}, "fetched_at": "2026-01-01"},
+            {"data": {"full_name": "Player D", "jersey_number": 14}, "fetched_at": "2026-01-01"},
+            {"data": {"full_name": "Player E", "jersey_number": 21}, "fetched_at": "2026-01-01"},
         ]
         with patch("src.shl.shl_se.load_shl_se_team_players", return_value=cached):
             result = fetch_shl_se_team_players(20961, "Brynäs IF", tmp_path)
 
-        assert len(result) == 2
+        assert len(result) == 5
         assert result[0]["full_name"] == "Player A"
 
     def test_fetches_from_api_on_cache_miss(self, tmp_path):

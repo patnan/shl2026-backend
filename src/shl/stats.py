@@ -7,26 +7,30 @@ from typing import List, Optional
 from src.shl.helpers.extraction import fetch_html
 from src.shl.helpers.stats_parsing import (
     parse_leading_goalies,
+    parse_players_by_team,
     parse_scoring_leaders,
     parse_team_abbreviations,
     parse_team_rosters,
 )
-from src.shl.models import GoalieStat, PlayerStat, RosterEntry, TeamInfo
+from src.shl.models import GoalieStat, PlayerStat, RosterEntry, TeamInfo, TeamPlayerStat
 from src.shl.store import (
     load_goalie_stats,
     load_player_stats,
     load_rosters,
     load_team_info,
+    load_team_player_stats,
     save_goalie_stats,
     save_player_stats,
     save_rosters,
     save_team_info,
+    save_team_player_stats,
 )
 
 
 SCORING_LEADERS_URL = "https://stats.swehockey.se/Players/Statistics/ScoringLeaders/{season_id}"
 LEADING_GOALIES_URL = "https://stats.swehockey.se/Players/Statistics/LeadingGoaliesSVS/{season_id}"
 TEAM_ROSTER_URL = "https://stats.swehockey.se/Teams/Info/TeamRoster/{season_id}"
+PLAYERS_BY_TEAM_URL = "https://stats.swehockey.se/Teams/Info/PlayersByTeam/{season_id}"
 
 
 class FetchPlayerStatsError(RuntimeError):
@@ -42,6 +46,10 @@ class FetchRostersError(RuntimeError):
 
 
 class FetchTeamInfoError(RuntimeError):
+    pass
+
+
+class FetchTeamPlayerStatsError(RuntimeError):
     pass
 
 
@@ -175,3 +183,36 @@ def fetch_team_info(season_id: int, db_dir: Path, force_reparse: bool = False) -
 def get_team_info(season_id: int, db_dir: Path) -> Optional[List[TeamInfo]]:
     """Load cached team info, or None if not yet fetched."""
     return load_team_info(db_dir, season_id)
+
+
+def fetch_team_player_stats(season_id: int, db_dir: Path, force_reparse: bool = False) -> List[TeamPlayerStat]:
+    """Fetch players-by-team stats from SweHockey, parse and persist.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+        force_reparse: If True, always re-scrape regardless of cache state.
+
+    Returns:
+        List of TeamPlayerStat dataclasses.
+    """
+    try:
+        if not force_reparse:
+            cached = load_team_player_stats(db_dir, season_id)
+            if cached is not None:
+                return cached
+
+        url = PLAYERS_BY_TEAM_URL.format(season_id=season_id)
+        html = fetch_html(url)
+        stats = parse_players_by_team(html)
+        save_team_player_stats(db_dir, season_id, stats)
+        return stats
+    except FetchTeamPlayerStatsError:
+        raise
+    except Exception as exc:
+        raise FetchTeamPlayerStatsError(f"fetch_team_player_stats failed for season '{season_id}': {exc}") from exc
+
+
+def get_team_player_stats(season_id: int, db_dir: Path) -> Optional[List[TeamPlayerStat]]:
+    """Load cached team player stats, or None if not yet fetched."""
+    return load_team_player_stats(db_dir, season_id)

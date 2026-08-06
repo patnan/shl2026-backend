@@ -17,6 +17,7 @@ from src.shl.models import (
     ScheduleEntry,
     StandingsRow,
     TeamInfo,
+    TeamPlayerStat,
 )
 
 _logger = logging.getLogger(__name__)
@@ -91,6 +92,11 @@ CREATE TABLE IF NOT EXISTS rosters (
     fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS team_info (
+    season_id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS team_player_stats (
     season_id INTEGER PRIMARY KEY,
     data TEXT NOT NULL,
     fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -327,6 +333,30 @@ class Store:
         conn.execute(
             "INSERT OR REPLACE INTO team_info (season_id, data, fetched_at) VALUES (?, ?, ?)",
             (season_id, json.dumps([dataclasses.asdict(e) for e in teams], ensure_ascii=False), _utc_now_iso()),
+        )
+        conn.commit()
+
+    # ------------------------------------------------------------------
+    # Team player stats
+    # ------------------------------------------------------------------
+
+    def load_team_player_stats(self, season_id: int) -> Optional[List[TeamPlayerStat]]:
+        row = self._get_conn().execute(
+            "SELECT data FROM team_player_stats WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return [TeamPlayerStat.from_dict(e) for e in json.loads(row[0])] if row else None
+
+    def get_team_player_stats_fetched_at(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM team_player_stats WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_team_player_stats(self, season_id: int, stats: List[TeamPlayerStat]) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO team_player_stats (season_id, data, fetched_at) VALUES (?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(e) for e in stats], ensure_ascii=False), _utc_now_iso()),
         )
         conn.commit()
 
@@ -720,6 +750,18 @@ def get_team_info_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
 
 def save_team_info(cache_dir: Path, season_id: int, teams: List[TeamInfo]) -> None:
     _store(cache_dir).save_team_info(season_id, teams)
+
+
+def load_team_player_stats(cache_dir: Path, season_id: int) -> Optional[List[TeamPlayerStat]]:
+    return _store(cache_dir).load_team_player_stats(season_id)
+
+
+def get_team_player_stats_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_team_player_stats_fetched_at(season_id)
+
+
+def save_team_player_stats(cache_dir: Path, season_id: int, stats: List[TeamPlayerStat]) -> None:
+    _store(cache_dir).save_team_player_stats(season_id, stats)
 
 
 def save_shl_se_player(cache_dir: Path, season_id: int, team: str, jersey: int, data: dict, portrait_path: Optional[str]) -> None:
