@@ -142,3 +142,27 @@ def test_calculate_standings_from_schedule_matches_official_18263():
         assert actual.otl == exp["otl"], f"OTL mismatch for {exp['team']}"
         assert actual.gwsw == exp["gwsw"], f"GWSW mismatch for {exp['team']}"
         assert actual.gwsl == exp["gwsl"], f"GWSL mismatch for {exp['team']}"
+
+
+def test_get_standings_no_games_played_returns_all_teams_at_rank_1():
+    """When no games have been played, get_standings returns all teams at rank 1 sorted by name."""
+    from unittest.mock import patch
+    from pathlib import Path
+    from src.shl.schedule import get_standings
+    from src.shl.models import ScheduleEntry
+
+    entries = [
+        ScheduleEntry(date='2026-09-15', time='19:00', home_team='Luleå HF', away_team='Frölunda HC', game_result='', periods='', spectators='', venue='', game_url='', round='1'),
+        ScheduleEntry(date='2026-09-15', time='19:00', home_team='Brynäs IF', away_team='Skellefteå AIK', game_result='', periods='', spectators='', venue='', game_url='', round='1'),
+        ScheduleEntry(date='2026-09-16', time='19:00', home_team='Frölunda HC', away_team='Brynäs IF', game_result='', periods='', spectators='', venue='', game_url='', round='2'),
+    ]
+
+    with patch('src.shl.schedule.load_schedule', return_value=entries), \
+         patch('src.shl.schedule.load_standings', return_value=None):
+        standings = get_standings(20961, Path('cache'))
+
+    assert len(standings) == 4
+    assert all(r.rank == 1 for r in standings)
+    assert [r.team for r in standings] == ['Brynäs IF', 'Frölunda HC', 'Luleå HF', 'Skellefteå AIK']
+    assert all(r.tp == 0 and r.games_played == 0 for r in standings)
+    assert all(r.movement == 0 for r in standings)

@@ -145,6 +145,7 @@ paths:
       description: |
         Computed from schedule data. During game days, standings reflect
         in-progress scores within ~30 seconds of a goal.
+        Pre-season (no games played): returns all teams at rank 1, sorted alphabetically.
       parameters:
         - $ref: "#/components/parameters/SeasonId"
       responses:

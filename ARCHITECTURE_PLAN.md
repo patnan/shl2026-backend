@@ -72,6 +72,8 @@ Game targets exist in the database but are **not actively polled**. They serve a
 
 Standings are **computed from schedule data** (not a separate poller). Recalculated on every schedule tick and compared with the previous value. No separate standings polling needed.
 
+**Pre-season:** When no games have been played yet, standings returns all teams from the schedule at rank 1, sorted alphabetically by team name. All stats are zero.
+
 Because SweHockey updates the schedule page with in-progress scores during live games, and the poller fetches every 30s during game windows, standings are **effectively live** — they reflect goals within ~30 seconds of being scored. No separate "live standings" endpoint is needed.
 
 ### 4) Overview Standings Poller (Legacy/Validation)

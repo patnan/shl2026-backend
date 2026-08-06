@@ -235,6 +235,29 @@ def get_standings(season_id: int, db_dir: Path) -> List[StandingsRow]:
     played = get_all_played_games(season_id, db_dir)
     standings = calculate_standings_from_schedule(played)
 
+    # If no games played yet, build a placeholder table from the full schedule.
+    if not standings:
+        schedule = load_schedule(db_dir, season_id)
+        if schedule:
+            teams = sorted({
+                t
+                for entry in schedule
+                for t in (entry.home_team, entry.away_team)
+                if t
+            })
+            standings = [
+                StandingsRow(
+                    rank=1,
+                    team=team,
+                    games_played=0,
+                    w=0, t=0, l=0,
+                    goals_for=0, goals_against=0, goal_difference=0,
+                    tp=0, otw=0, otl=0, gwsw=0, gwsl=0,
+                )
+                for team in teams
+            ]
+        return standings
+
     # Compute movement against previously saved standings.
     prev_standings = load_standings(db_dir, season_id)
     if prev_standings:

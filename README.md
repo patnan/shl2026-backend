@@ -13,7 +13,7 @@ Code root: [src](src)
 - Parse a single game page into typed dataclasses.
 - Parse season schedule pages into typed schedule entries.
 - Persist games, schedules, standings, player stats, goalie stats, and rosters in SQLite.
-- Compute standings from played games (effectively live during game days — recalculated every 30s from schedule data).
+- Compute standings from played games (effectively live during game days — recalculated every 30s from schedule data). Pre-season: returns all teams at rank 1, sorted alphabetically.
 - Standings movement tracking (position change compared to previous snapshot).
 - Fetch standings from SweHockey overview pages.
 - Scrape player scoring leaders from SweHockey.
