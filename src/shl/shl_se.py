@@ -373,7 +373,11 @@ def fetch_shl_se_player(
         if cached is not None:
             return cached["data"]
 
-    mapper = _get_team_mapper()
+    try:
+        mapper = _get_team_mapper()
+    except Exception as exc:
+        _logger.error("fetch_shl_se_player: failed to initialize team mapper: %s", exc)
+        return None
     shl_team = mapper.swehockey_to_shl_se(swehockey_team)
     if not shl_team:
         _logger.warning("fetch_shl_se_player: no shl.se team match for '%s'", swehockey_team)
@@ -409,7 +413,11 @@ def fetch_shl_se_team_players(
         if cached:
             return [row["data"] for row in cached]
 
-    mapper = _get_team_mapper()
+    try:
+        mapper = _get_team_mapper()
+    except Exception as exc:
+        _logger.error("fetch_shl_se_team_players: failed to initialize team mapper: %s", exc)
+        return []
     shl_team = mapper.swehockey_to_shl_se(swehockey_team)
     if not shl_team:
         _logger.warning("fetch_shl_se_team_players: no shl.se team match for '%s'", swehockey_team)
