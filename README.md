@@ -282,7 +282,7 @@ docker compose up -d --build
 
 Compose services:
 - `shl-api` — REST API server (port 8000, 1GB memory, 2 CPUs)
-- `shl-poller` — Poller worker, ticks every 30s (512MB memory, 1 CPU). Configure via `SEASON_IDS` (comma-separated, continuous polling) and `PAST_SEASON_IDS` (comma-separated, fetched once).
+- `shl-poller` — Poller worker, ticks every 5s (512MB memory, 1 CPU). Configure via `SEASON_IDS` (comma-separated, continuous polling) and `PAST_SEASON_IDS` (comma-separated, fetched once).
 - `shl-notifier` — Notification worker, checks events every 5s (256MB memory, 0.5 CPU)
 
 Inspect health status:

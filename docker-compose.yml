@@ -36,7 +36,7 @@ services:
         IFS=',';
         for sid in $${SEASON_IDS}; do python -m src.cli poller-seed $$sid; done;
         for sid in $${PAST_SEASON_IDS}; do python -m src.cli poller-seed $$sid --once; done;
-        python -m src.cli poller-run --tick-interval 30
+        python -m src.cli poller-run --tick-interval 5
       "
     environment:
       SEASON_IDS: "${SEASON_IDS:-18263}"

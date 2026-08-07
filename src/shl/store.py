@@ -5,7 +5,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from src.shl.models import (
     DomainEvent,
@@ -715,8 +715,16 @@ class Store:
 # short-lived Store per call. For performance, consumers should
 # hold a Store instance and call methods directly.
 
+_store_cache: Dict[Path, Store] = {}
+
+
 def _store(cache_dir: Path) -> Store:
-    return Store(cache_dir)
+    resolved = cache_dir.resolve()
+    store = _store_cache.get(resolved)
+    if store is None:
+        store = Store(cache_dir)
+        _store_cache[resolved] = store
+    return store
 
 
 def load_game(cache_dir: Path, game_id: int) -> Optional[Game]:
