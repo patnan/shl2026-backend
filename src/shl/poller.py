@@ -11,7 +11,7 @@ from time import sleep as _sleep
 from typing import Any, Dict, List, Optional
 
 from src.shl.game import fetch_game
-from src.shl.schedule import fetch_live_games, fetch_schedule, get_standings
+from src.shl.schedule import fetch_live_games, fetch_schedule, get_standings, get_live_standings, compare_live_standings
 from src.shl.standings import fetch_table
 from src.shl.stats import fetch_goalie_stats, fetch_player_stats, fetch_rosters, fetch_team_info
 from src.shl.models import PollTarget
@@ -373,7 +373,23 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
         return
 
     if target_type == "live_games":
-        fetch_live_games(int(target_key), cache_dir)
+        season_id = int(target_key)
+        # Snapshot live standings before fetching new data.
+        prev_live_standings = get_live_standings(season_id, cache_dir)
+
+        fetch_live_games(season_id, cache_dir)
+
+        # Compute new live standings and compare.
+        new_live_standings = get_live_standings(season_id, cache_dir)
+        changes = compare_live_standings(prev_live_standings, new_live_standings)
+        if changes:
+            insert_domain_event(
+                cache_dir,
+                "live_standings_changed",
+                f"live_standings:{target_key}",
+                {"season_id": season_id, "changes": changes},
+            )
+            logger.info("live_standings_changed season=%d changes=%d", season_id, len(changes))
         return
 
     raise PollerError(f"Unsupported target_type '{target_type}'")
