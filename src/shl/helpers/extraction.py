@@ -176,6 +176,19 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
         current_round: Optional[int] = None
         current_date: Optional[str] = None
 
+        # Detect column layout by checking data rows.
+        # Format A (8 cols): date | date+time | time | teams | result | periods | spectators | venue
+        # Format B (7 cols): game# | date+time | teams | result | periods | spectators | venue
+        # Detect by checking if first data row's cells[0] contains a date.
+        layout_detected = False
+        col_date = 0
+        col_time = 1
+        col_teams = 3
+        col_result = 4
+        col_periods = 5
+        col_spectators = 6
+        col_venue = 7
+
         for row in soup.find_all("tr"):
             cells = row.find_all("td", recursive=False)
             if not cells:
@@ -190,7 +203,21 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
             if len(cells) < 3:
                 continue
 
-            date_text = re.sub(r"\s+", " ", cells[0].get_text(" ", strip=True)).strip()
+            # Detect layout once from the first data row with enough cells.
+            if not layout_detected and len(cells) >= 7:
+                first_cell_text = re.sub(r"\s+", " ", cells[0].get_text(" ", strip=True)).strip()
+                if not re.search(r"\d{4}-\d{2}-\d{2}", first_cell_text):
+                    # Format B: game number prefix, date+time in cells[1], teams in cells[2]
+                    col_date = 1
+                    col_time = 1
+                    col_teams = 2
+                    col_result = 3
+                    col_periods = 4
+                    col_spectators = 5
+                    col_venue = 6
+                layout_detected = True
+
+            date_text = re.sub(r"\s+", " ", cells[col_date].get_text(" ", strip=True)).strip() if len(cells) > col_date else ""
             date_match = re.search(r"\d{4}-\d{2}-\d{2}", date_text)
             if date_match is not None:
                 current_date = date_match.group(0)
@@ -198,10 +225,10 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
             if current_date is None:
                 continue
 
-            time_text = re.sub(r"\s+", " ", cells[1].get_text(" ", strip=True)).strip() if len(cells) > 1 else ""
+            time_text = re.sub(r"\s+", " ", cells[col_time].get_text(" ", strip=True)).strip() if len(cells) > col_time else ""
             time_match = re.search(r"\b\d{1,2}:\d{2}\b", time_text)
-            if not time_match and len(cells) > 2:
-                time_text = re.sub(r"\s+", " ", cells[2].get_text(" ", strip=True)).strip()
+            if not time_match and len(cells) > col_time + 1:
+                time_text = re.sub(r"\s+", " ", cells[col_time + 1].get_text(" ", strip=True)).strip()
                 time_match = re.search(r"\b\d{1,2}:\d{2}\b", time_text)
 
             game_link = row.find("a", href=re.compile(r"/Game/Events/\d+"))
@@ -218,14 +245,14 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
 
             # Require either a game link or a teams cell with " - " separator.
             teams_cell = ""
-            if len(cells) > 3:
-                teams_cell = re.sub(r"\s+", " ", cells[3].get_text(" ", strip=True)).strip()
+            if len(cells) > col_teams:
+                teams_cell = re.sub(r"\s+", " ", cells[col_teams].get_text(" ", strip=True)).strip()
             if not game_url and not re.search(r"\S\s*-\s*\S", teams_cell):
                 continue
 
             game_result = ""
-            if len(cells) > 4:
-                result_text = re.sub(r"\s+", " ", cells[4].get_text(" ", strip=True)).strip()
+            if len(cells) > col_result:
+                result_text = re.sub(r"\s+", " ", cells[col_result].get_text(" ", strip=True)).strip()
                 if re.search(r"^\d{1,2}\s*-\s*\d{1,2}", result_text):
                     game_result = result_text
             if not game_result:
@@ -235,22 +262,22 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
                     game_result = result_match.group(0).replace(" ", "")
 
             spectators = ""
-            if len(cells) > 6:
-                spec_text = re.sub(r"\s+", " ", cells[6].get_text(" ", strip=True)).strip()
+            if len(cells) > col_spectators:
+                spec_text = re.sub(r"\s+", " ", cells[col_spectators].get_text(" ", strip=True)).strip()
                 if re.search(r"\d+", spec_text):
                     spectators = spec_text
 
             periods = ""
-            if len(cells) > 5:
-                periods_text = re.sub(r"\s+", " ", cells[5].get_text(" ", strip=True)).strip()
+            if len(cells) > col_periods:
+                periods_text = re.sub(r"\s+", " ", cells[col_periods].get_text(" ", strip=True)).strip()
                 if re.search(r"\(\d+-\d+", periods_text):
                     periods = periods_text
 
             venue = ""
-            if len(cells) > 7:
-                venue = re.sub(r"\s+", " ", cells[7].get_text(" ", strip=True)).strip()
-            elif len(cells) > 5 and not periods:
-                venue = re.sub(r"\s+", " ", cells[5].get_text(" ", strip=True)).strip()
+            if len(cells) > col_venue:
+                venue = re.sub(r"\s+", " ", cells[col_venue].get_text(" ", strip=True)).strip()
+            elif len(cells) > col_periods and not periods:
+                venue = re.sub(r"\s+", " ", cells[col_periods].get_text(" ", strip=True)).strip()
 
             # Extract teams from the teams cell.
             home_team = ""

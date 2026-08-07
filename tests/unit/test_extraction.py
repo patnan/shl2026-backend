@@ -455,6 +455,68 @@ def test_extract_schedule_games_fetches_and_parses(monkeypatch):
     assert games[0].game_url == "https://stats.swehockey.se/Game/Events/1004310"
 
 
+def test_extract_schedule_games_from_listing_html_7col_format():
+    """Test schedule parsing with 7-column format (game number prefix, date+time combined)."""
+    html = """
+<html><body>
+  <table>
+    <tr>
+      <td>32</td>
+      <td>2026-08-07 18:00</td>
+      <td>Västerås IK - Leksands IF</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>ABB Arena Nord</td>
+    </tr>
+    <tr>
+      <td>33</td>
+      <td>2026-08-12 18:00</td>
+      <td>IK Oskarshamn - Vimmerby HC</td>
+      <td>3 - 1</td>
+      <td>(1-0, 1-1, 1-0)</td>
+      <td>4500</td>
+      <td>Be-Ge Hockey Center</td>
+    </tr>
+    <tr>
+      <td></td>
+      <td>2026-08-12 18:00</td>
+      <td>Östersunds IK - Mora IK</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>Östersund Arena Hall A</td>
+    </tr>
+  </table>
+</body></html>
+"""
+    games = extract_schedule_games_from_listing_html(
+        html,
+        base_url="https://stats.swehockey.se/ScheduleAndResults/Schedule/21138",
+    )
+
+    assert len(games) == 3
+    assert games[0].date == "2026-08-07"
+    assert games[0].time == "18:00"
+    assert games[0].home_team == "Västerås IK"
+    assert games[0].away_team == "Leksands IF"
+    assert games[0].venue == "ABB Arena Nord"
+    assert games[0].game_result == ""
+
+    assert games[1].date == "2026-08-12"
+    assert games[1].time == "18:00"
+    assert games[1].home_team == "IK Oskarshamn"
+    assert games[1].away_team == "Vimmerby HC"
+    assert games[1].game_result == "3 - 1"
+    assert games[1].periods == "(1-0, 1-1, 1-0)"
+    assert games[1].spectators == "4500"
+    assert games[1].venue == "Be-Ge Hockey Center"
+
+    assert games[2].date == "2026-08-12"
+    assert games[2].home_team == "Östersunds IK"
+    assert games[2].away_team == "Mora IK"
+
+
 def test_extract_schedule_games_wraps_fetch_errors(monkeypatch):
     monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", lambda url: (_ for _ in ()).throw(RuntimeError("network down")))
 
