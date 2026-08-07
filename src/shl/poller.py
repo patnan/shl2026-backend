@@ -47,7 +47,8 @@ DEFAULT_SUCCESS_INTERVAL_SECONDS = {
 }
 
 # Schedule is fetched at fixed daily times (06:00, 14:00, 18:00).
-SCHEDULE_FETCH_HOURS = [6, 14, 18]
+# Schedule is fetched at fixed daily times.
+SCHEDULE_FETCH_TIMES = [(6, 0), (14, 0), (18, 0), (22, 30)]
 
 DEFAULT_ERROR_BASE_INTERVAL_SECONDS = {
     "game": 30,
@@ -104,18 +105,19 @@ def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optio
 def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -> int:
     """Determine schedule polling interval based on fixed daily times.
 
-    Schedule is fetched at startup, then next at the nearest of 06:00, 14:00, 18:00.
+    Schedule is fetched at startup, then next at the nearest of 06:00, 14:00, 18:00, 22:30.
     Returns seconds until the next scheduled fetch time.
     """
     # Find the next fetch time today or tomorrow.
-    for hour in SCHEDULE_FETCH_HOURS:
-        next_time = datetime(now.year, now.month, now.day, hour, 0, 0, tzinfo=now.tzinfo)
+    for hour, minute in SCHEDULE_FETCH_TIMES:
+        next_time = datetime(now.year, now.month, now.day, hour, minute, 0, tzinfo=now.tzinfo)
         if next_time > now:
             return int((next_time - now).total_seconds())
 
-    # All today's times have passed — next is 06:00 tomorrow.
+    # All today's times have passed — next is first time tomorrow.
     tomorrow = now + timedelta(days=1)
-    next_time = datetime(tomorrow.year, tomorrow.month, tomorrow.day, SCHEDULE_FETCH_HOURS[0], 0, 0, tzinfo=now.tzinfo)
+    first_hour, first_minute = SCHEDULE_FETCH_TIMES[0]
+    next_time = datetime(tomorrow.year, tomorrow.month, tomorrow.day, first_hour, first_minute, 0, tzinfo=now.tzinfo)
     return int((next_time - now).total_seconds())
 
 # Live games polling intervals.
