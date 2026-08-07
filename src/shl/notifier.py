@@ -12,6 +12,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import signal
 from time import sleep as _sleep
 from typing import Any, Dict, List
 
@@ -173,13 +174,24 @@ def run_notification_worker(
         logger.error("Cannot start notification worker — FCM not configured")
         return {"error": "FCM not configured", "events_processed": 0}
 
+    # Graceful shutdown on SIGTERM/SIGINT — finish current tick, then exit.
+    shutdown_requested = False
+
+    def _handle_shutdown(signum, frame):
+        nonlocal shutdown_requested
+        shutdown_requested = True
+        logger.info("Shutdown signal received (signal=%d), finishing current tick...", signum)
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
     ticks = 0
     events_processed = 0
     events_skipped = 0
 
     logger.info("Notification worker started (tick_interval=%.1fs)", tick_interval_seconds)
 
-    while True:
+    while not shutdown_requested:
         events = list_unprocessed_domain_events(cache_dir, limit=50)
 
         for event in events:
@@ -198,7 +210,8 @@ def run_notification_worker(
         if max_ticks is not None and ticks >= max_ticks:
             break
 
-        _sleep(tick_interval_seconds)
+        if not shutdown_requested:
+            _sleep(tick_interval_seconds)
 
     summary = {
         "ticks": ticks,

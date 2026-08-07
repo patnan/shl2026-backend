@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import random
 import re
+import signal
 from time import perf_counter
 from time import sleep as _sleep
 from typing import Any, Dict, List, Optional
@@ -641,6 +642,17 @@ def run_poller_worker(
     if max_ticks is not None and max_ticks <= 0:
         raise PollerError("max_ticks must be > 0 when provided")
 
+    # Graceful shutdown on SIGTERM/SIGINT — finish current tick, then exit.
+    shutdown_requested = False
+
+    def _handle_shutdown(signum, frame):
+        nonlocal shutdown_requested
+        shutdown_requested = True
+        logger.info("Shutdown signal received (signal=%d), finishing current tick...", signum)
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
     ticks = 0
     ok_results = 0
     error_results = 0
@@ -649,7 +661,7 @@ def run_poller_worker(
     max_duration_ms = 0
     worker_started = _now_utc()
 
-    while True:
+    while not shutdown_requested:
         tick_results = run_poller_tick(cache_dir)
         ticks += 1
 
@@ -667,7 +679,8 @@ def run_poller_worker(
         if max_ticks is not None and ticks >= max_ticks:
             break
 
-        _sleep(tick_interval_seconds)
+        if not shutdown_requested:
+            _sleep(tick_interval_seconds)
 
     worker_summary = {
         "ticks": ticks,

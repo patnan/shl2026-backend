@@ -11,7 +11,7 @@ Identified 2026-08-07. Sorted by category.
 
 ## Reliability / Robustness
 
-- [ ] **Graceful shutdown** — No SIGTERM/SIGINT handling in poller/notifier. Docker sends SIGTERM on stop; mid-fetch state could corrupt. Finish current tick before exiting.
+- [x] **Graceful shutdown** — No SIGTERM/SIGINT handling in poller/notifier. Docker sends SIGTERM on stop; mid-fetch state could corrupt. Finish current tick before exiting.
 - [ ] **Thread safety for `_session`** — `requests.Session` is shared across threads if the API bootstrap path runs concurrently with the poller. Low risk but worth fixing.
 - [ ] **Notification retry** — FCM send is fire-and-forget. If FCM is temporarily down, the event is marked processed and the notification is lost. Retry with backoff or leave unprocessed on transient errors.
 - [ ] **Domain events pruning** — `domain_events` table is append-only. No cleanup. Add periodic deletion of processed events older than 7 days.
