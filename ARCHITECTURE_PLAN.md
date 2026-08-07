@@ -166,9 +166,10 @@ Use current tables as base and extend.
 
 1. poll_targets
 - id (PK)
-- target_type (game, schedule, standings)
+- target_type (game, schedule, standings, live_games, player_stats, goalie_stats, rosters, team_info)
 - target_key (game_id or season_id)
 - enabled
+- one_shot (if true, target is disabled after first successful poll — used for past seasons via `--once`)
 
 2. poll_state
 - target_id (FK)
@@ -338,6 +339,7 @@ Phase 1 Step 3 completion notes:
 2. Worker supports bounded execution via max_ticks and tracks ok/error result counts.
 3. Added loop and validation tests in [tests/unit/test_poller.py](tests/unit/test_poller.py).
 4. Added seeding workflow in [src/shl/poller.py](src/shl/poller.py) via seed_season_targets and CLI commands in [src/cli.py](src/cli.py): poller-seed and poller-run.
+5. Added `--once` flag for seeding past seasons: creates one_shot targets (all except live_games), which the poller auto-disables after first successful execution.
 
 Phase 2:
 1. [x] add REST API server endpoints over get methods

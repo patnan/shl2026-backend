@@ -530,6 +530,7 @@ class PollTarget:
     target_type: str
     target_key: str
     enabled: bool
+    one_shot: bool = False
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     last_success_at: Optional[str] = None

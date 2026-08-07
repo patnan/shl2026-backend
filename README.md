@@ -143,6 +143,12 @@ Seed poll targets for a season:
 python -m src.cli poller-seed 18263
 ```
 
+Seed a past season (fetch all data once, then stop polling):
+
+```bash
+python -m src.cli poller-seed 18263 --once
+```
+
 Seed only schedule and standings targets (skip game targets):
 
 ```bash
@@ -199,8 +205,11 @@ Convenience scripts for local development (require `.venv`):
 # Start API server:
 ./start_api.sh
 
-# Start poller (seeds + runs):
-SEASON_ID=18263 ./start_poller.sh
+# Start poller (seeds + runs) for one season:
+SEASON_IDS=18263 ./start_poller.sh
+
+# Multiple current seasons + past seasons (fetched once):
+SEASON_IDS=20961,21139 PAST_SEASON_IDS=18263,19567 ./start_poller.sh
 
 # Start notification worker:
 ./start_notifier.sh
@@ -269,7 +278,7 @@ docker compose up -d --build
 
 Compose services:
 - `shl-api` — REST API server (port 8000, 1GB memory, 2 CPUs)
-- `shl-poller` — Poller worker, ticks every 30s (512MB memory, 1 CPU)
+- `shl-poller` — Poller worker, ticks every 30s (512MB memory, 1 CPU). Configure via `SEASON_IDS` (comma-separated, continuous polling) and `PAST_SEASON_IDS` (comma-separated, fetched once).
 - `shl-notifier` — Notification worker, checks events every 5s (256MB memory, 0.5 CPU)
 
 Inspect health status:

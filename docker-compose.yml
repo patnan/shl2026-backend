@@ -32,9 +32,15 @@ services:
     container_name: shl-poller
     restart: unless-stopped
     command: >
-      sh -c "python -m src.cli poller-seed $${SEASON_ID} && python -m src.cli poller-run --tick-interval 30"
+      sh -c "
+        IFS=',';
+        for sid in $${SEASON_IDS}; do python -m src.cli poller-seed $$sid; done;
+        for sid in $${PAST_SEASON_IDS}; do python -m src.cli poller-seed $$sid --once; done;
+        python -m src.cli poller-run --tick-interval 30
+      "
     environment:
-      SEASON_ID: "${SEASON_ID:-18263}"
+      SEASON_IDS: "${SEASON_IDS:-18263}"
+      PAST_SEASON_IDS: "${PAST_SEASON_IDS:-}"
     volumes:
       - ./cache:/app/cache
     mem_limit: 512m

@@ -53,9 +53,10 @@ def test_cmd_compare_prints_result(tmp_path, capsys):
 def test_cmd_poller_seed_prints_result(capsys, monkeypatch):
     captured = {}
 
-    def fake_seed(cache_dir, season_id, force_reparse_schedule):
+    def fake_seed(cache_dir, season_id, force_reparse_schedule, once=False):
         captured["season_id"] = season_id
         captured["force_reparse_schedule"] = force_reparse_schedule
+        captured["once"] = once
         return {"season_id": season_id, "total_targets": 2}
 
     monkeypatch.setattr("src.cli.seed_season_targets", fake_seed)
@@ -69,6 +70,7 @@ def test_cmd_poller_seed_prints_result(capsys, monkeypatch):
     assert captured == {
         "season_id": 18263,
         "force_reparse_schedule": True,
+        "once": False,
     }
 
 

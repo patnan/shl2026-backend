@@ -22,7 +22,8 @@ The app operates per season. Everything is scoped to a SweHockey tournament ID:
 | SHL 2025/2026 | `18263` |
 | SHL 2026/2027 | `20961` |
 
-Set via the `SEASON_ID` environment variable. Default: `18263`.
+Set via the `SEASON_IDS` environment variable (comma-separated). Default: `18263`.
+For past seasons (fetched once), use `PAST_SEASON_IDS`.
 
 ---
 
@@ -30,7 +31,7 @@ Set via the `SEASON_ID` environment variable. Default: `18263`.
 
 ```bash
 # Terminal 1 — Poller (seeds targets + starts polling SweHockey)
-SEASON_ID=18263 ./start_poller.sh
+SEASON_IDS=18263 ./start_poller.sh
 
 # Terminal 2 — API server (http://127.0.0.1:8000)
 ./start_api.sh
@@ -59,7 +60,7 @@ API docs (Swagger UI): http://127.0.0.1:8000/docs
 
 ```bash
 # Set season (or create a .env file)
-echo "SEASON_ID=18263" > .env
+echo "SEASON_IDS=18263" > .env
 
 # Build and start all services
 docker compose up -d --build
@@ -108,9 +109,9 @@ python -m src.cli serve --host 127.0.0.1 --port 8000
 When a new season starts:
 
 1. Find the new season ID on stats.swehockey.se (it's in the URL)
-2. Change `SEASON_ID` and restart:
+2. Change `SEASON_IDS` and restart:
    ```bash
-   SEASON_ID=20961 ./start_poller.sh
+   SEASON_IDS=20961 ./start_poller.sh
    ```
    Or update `.env` and `docker compose up -d`.
 

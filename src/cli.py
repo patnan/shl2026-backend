@@ -151,6 +151,7 @@ def cmd_poller_seed(args: argparse.Namespace, cache_dir: Path) -> None:
         cache_dir,
         season_id=args.season_id,
         force_reparse_schedule=args.force_reparse_schedule,
+        once=args.once,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
@@ -230,6 +231,7 @@ def main() -> None:
     p_seed = sub.add_parser("poller-seed", help="Seed poll targets for a season")
     p_seed.add_argument("season_id", type=int, help="Season/tournament id")
     p_seed.add_argument("--force-reparse-schedule", action="store_true", help="Force schedule refetch")
+    p_seed.add_argument("--once", action="store_true", help="One-shot mode: fetch all targets once then disable (for past seasons)")
 
     # poller run
     p_run = sub.add_parser("poller-run", help="Run poller worker loop")

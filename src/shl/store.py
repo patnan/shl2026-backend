@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS poll_targets (
     target_type TEXT NOT NULL,
     target_key TEXT NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
+    one_shot INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(target_type, target_key)
@@ -449,6 +450,7 @@ class Store:
         target_key: str,
         enabled: bool = True,
         next_poll_at: Optional[str] = None,
+        one_shot: bool = False,
     ) -> int:
         now = _utc_now_iso()
         conn = self._get_conn()
@@ -459,8 +461,8 @@ class Store:
 
         if row is None:
             cursor = conn.execute(
-                "INSERT INTO poll_targets (target_type, target_key, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (target_type, target_key, 1 if enabled else 0, now, now),
+                "INSERT INTO poll_targets (target_type, target_key, enabled, one_shot, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (target_type, target_key, 1 if enabled else 0, 1 if one_shot else 0, now, now),
             )
             target_id = cursor.lastrowid
             conn.execute(
@@ -472,8 +474,8 @@ class Store:
 
         target_id = int(row[0])
         conn.execute(
-            "UPDATE poll_targets SET enabled = ?, updated_at = ? WHERE id = ?",
-            (1 if enabled else 0, now, target_id),
+            "UPDATE poll_targets SET enabled = ?, one_shot = ?, updated_at = ? WHERE id = ?",
+            (1 if enabled else 0, 1 if one_shot else 0, now, target_id),
         )
         if next_poll_at is not None:
             conn.execute(
@@ -492,7 +494,7 @@ class Store:
         rows = self._get_conn().execute(
             """
             SELECT
-                t.id, t.target_type, t.target_key, t.enabled,
+                t.id, t.target_type, t.target_key, t.enabled, t.one_shot,
                 t.created_at, t.updated_at,
                 s.last_success_at, s.last_error_at, s.error_count,
                 s.next_poll_at, s.last_duration_ms
@@ -525,7 +527,7 @@ class Store:
         rows = self._get_conn().execute(
             f"""
             SELECT
-                t.id, t.target_type, t.target_key, t.enabled,
+                t.id, t.target_type, t.target_key, t.enabled, t.one_shot,
                 t.created_at, t.updated_at,
                 s.last_success_at, s.last_error_at, s.error_count,
                 s.next_poll_at, s.last_duration_ms
@@ -668,13 +670,14 @@ class Store:
             target_type=row[1],
             target_key=row[2],
             enabled=bool(row[3]),
-            created_at=row[4],
-            updated_at=row[5],
-            last_success_at=row[6],
-            last_error_at=row[7],
-            error_count=int(row[8] or 0),
-            next_poll_at=row[9],
-            last_duration_ms=row[10],
+            one_shot=bool(row[4]),
+            created_at=row[5],
+            updated_at=row[6],
+            last_success_at=row[7],
+            last_error_at=row[8],
+            error_count=int(row[9] or 0),
+            next_poll_at=row[10],
+            last_duration_ms=row[11],
         )
 
 
@@ -815,8 +818,9 @@ def upsert_poll_target(
     target_key: str,
     enabled: bool = True,
     next_poll_at: Optional[str] = None,
+    one_shot: bool = False,
 ) -> int:
-    return _store(cache_dir).upsert_poll_target(target_type, target_key, enabled, next_poll_at)
+    return _store(cache_dir).upsert_poll_target(target_type, target_key, enabled, next_poll_at, one_shot)
 
 
 def list_due_poll_targets(cache_dir: Path, now_iso: Optional[str] = None) -> List[PollTarget]:

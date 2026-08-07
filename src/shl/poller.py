@@ -202,70 +202,42 @@ def seed_season_targets(
     cache_dir: Path,
     season_id: int,
     force_reparse_schedule: bool = False,
+    once: bool = False,
 ) -> Dict[str, int]:
+    """Seed poll targets for a season.
+
+    Args:
+        cache_dir: Path to the cache/database directory.
+        season_id: SweHockey season/tournament ID.
+        force_reparse_schedule: Force schedule refetch on next poll.
+        once: If True, seed all targets except live_games as one_shot
+              (disabled after first successful run). Useful for past seasons.
+    """
     now_iso = _to_iso(_now_utc())
 
-    upsert_poll_target(
-        cache_dir,
-        target_type="schedule",
-        target_key=str(season_id),
-        enabled=True,
-        next_poll_at=now_iso,
-    )
-    upsert_poll_target(
-        cache_dir,
-        target_type="standings",
-        target_key=str(season_id),
-        enabled=True,
-        next_poll_at=now_iso,
-    )
-    upsert_poll_target(
-        cache_dir,
-        target_type="player_stats",
-        target_key=str(season_id),
-        enabled=True,
-        next_poll_at=now_iso,
-    )
-    upsert_poll_target(
-        cache_dir,
-        target_type="goalie_stats",
-        target_key=str(season_id),
-        enabled=True,
-        next_poll_at=now_iso,
-    )
-    upsert_poll_target(
-        cache_dir,
-        target_type="rosters",
-        target_key=str(season_id),
-        enabled=True,
-        next_poll_at=now_iso,
-    )
-    upsert_poll_target(
-        cache_dir,
-        target_type="team_info",
-        target_key=str(season_id),
-        enabled=True,
-        next_poll_at=now_iso,
-    )
-    upsert_poll_target(
-        cache_dir,
-        target_type="live_games",
-        target_key=str(season_id),
-        enabled=True,
-        next_poll_at=now_iso,
-    )
+    # Targets to seed. Skip live_games in once mode (useless for past seasons).
+    targets = ["schedule", "standings", "player_stats", "goalie_stats", "rosters", "team_info"]
+    if not once:
+        targets.append("live_games")
 
-    return {
+    for target_type in targets:
+        upsert_poll_target(
+            cache_dir,
+            target_type=target_type,
+            target_key=str(season_id),
+            enabled=True,
+            next_poll_at=now_iso,
+            one_shot=once,
+        )
+
+    result: Dict[str, int] = {
         "season_id": season_id,
-        "schedule_target": 1,
-        "standings_target": 1,
-        "player_stats_target": 1,
-        "goalie_stats_target": 1,
-        "rosters_target": 1,
-        "team_info_target": 1,
-        "live_games_target": 1,
-        "total_targets": 7,
+        "one_shot": 1 if once else 0,
     }
+    for t in targets:
+        result[f"{t}_target"] = 1
+    result["total_targets"] = len(targets)
+    return result
 
 
 def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
@@ -411,6 +383,12 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
             duration_ms = int((perf_counter() - started) * 1000)
             next_poll_at = _compute_success_next_poll(target_type, now_value, cache_dir, target_key)
             update_poll_success(cache_dir, target_id, duration_ms, next_poll_at)
+
+            # Disable one_shot targets after successful execution.
+            if target.one_shot:
+                upsert_poll_target(cache_dir, target_type=target_type, target_key=target_key, enabled=False, one_shot=True)
+                logger.info("one_shot_disabled target_id=%d type=%s key=%s", target_id, target_type, target_key)
+
             insert_domain_event(
                 cache_dir,
                 "poll_completed",

@@ -195,6 +195,81 @@ def test_seed_season_targets_creates_schedule_and_standings(monkeypatch, tmp_pat
     }
 
 
+def test_seed_season_targets_once_mode(tmp_path):
+    from src.shl.poller import seed_season_targets
+
+    result = seed_season_targets(tmp_path, season_id=18263, once=True)
+
+    # once mode skips live_games
+    assert result["one_shot"] == 1
+    assert result["total_targets"] == 6
+    assert "live_games_target" not in result
+    assert result["schedule_target"] == 1
+
+    targets = list_poll_targets(tmp_path)
+    assert len(targets) == 6
+    target_types = {t.target_type for t in targets}
+    assert "live_games" not in target_types
+    # All targets should be marked one_shot
+    assert all(t.one_shot for t in targets)
+
+
+def test_one_shot_target_disabled_after_success(monkeypatch, tmp_path):
+    from src.shl.poller import run_poller_tick
+
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    upsert_poll_target(
+        tmp_path,
+        target_type="standings",
+        target_key="18263",
+        enabled=True,
+        next_poll_at=_iso(now - timedelta(seconds=1)),
+        one_shot=True,
+    )
+
+    monkeypatch.setattr("src.shl.poller.fetch_table", lambda season_id, db_dir: [])
+
+    results = run_poller_tick(tmp_path, now=now)
+    assert len(results) == 1
+    assert results[0]["status"] == "ok"
+
+    # Target should be disabled after success
+    targets = list_poll_targets(tmp_path)
+    assert len(targets) == 1
+    assert targets[0].enabled is False
+    assert targets[0].one_shot is True
+
+
+def test_one_shot_target_not_disabled_on_error(monkeypatch, tmp_path):
+    from src.shl.poller import run_poller_tick
+
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    upsert_poll_target(
+        tmp_path,
+        target_type="standings",
+        target_key="18263",
+        enabled=True,
+        next_poll_at=_iso(now - timedelta(seconds=1)),
+        one_shot=True,
+    )
+
+    def fake_fetch_table(season_id, db_dir):
+        raise RuntimeError("network error")
+
+    monkeypatch.setattr("src.shl.poller.fetch_table", fake_fetch_table)
+
+    results = run_poller_tick(tmp_path, now=now)
+    assert len(results) == 1
+    assert results[0]["status"] == "error"
+
+    # Target should still be enabled (will retry)
+    targets = list_poll_targets(tmp_path)
+    assert len(targets) == 1
+    assert targets[0].enabled is True
+
+
 def test_compute_error_next_poll_uses_circuit_breaker_cooldown(monkeypatch):
     now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 
