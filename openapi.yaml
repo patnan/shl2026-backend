@@ -535,7 +535,15 @@ components:
           type: string
         status:
           type: string
-          description: "Game status during live games (e.g. '1st period', 'Final Score'). Empty when not live."
+          description: "Game status during live games (e.g. '2nd period (01:49)', 'Waiting for 1st period'). Empty when not live."
+        game_clock:
+          type: string
+          description: "Current game clock parsed from status (e.g. '01:49'). Empty when not in progress."
+          example: "01:49"
+        current_period:
+          type: string
+          description: "Current period parsed from status (e.g. '2nd period'). Empty when not in progress."
+          example: "2nd period"
         overtime:
           type: string
           enum: ["", "OT", "SO"]

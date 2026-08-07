@@ -218,6 +218,8 @@ class ScheduleEntry:
     game_url: str
     round: str
     status: str = ""  # Game status (e.g. "1st period", "Final Score") — populated during live games.
+    game_clock: str = ""  # Current game clock (e.g. "01:49") — parsed from status during live games.
+    current_period: str = ""  # Current period (e.g. "2nd period") — parsed from status during live games.
 
     @classmethod
     def from_dict(cls, d: Dict) -> ScheduleEntry:
@@ -233,6 +235,8 @@ class ScheduleEntry:
             game_url=d.get("game_url") or "",
             round=d.get("round") or "",
             status=d.get("status") or "",
+            game_clock=d.get("game_clock") or "",
+            current_period=d.get("current_period") or "",
         )
 
     @property

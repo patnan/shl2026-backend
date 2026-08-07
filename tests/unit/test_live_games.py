@@ -184,6 +184,18 @@ class TestParseLiveGamesHtml:
         entries = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].status == "2nd period (15:30)"
 
+    def test_extracts_game_clock_from_status(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[0].game_clock == "15:30"
+        assert entries[1].game_clock == ""
+        assert entries[2].game_clock == ""
+
+    def test_extracts_current_period_from_status(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[0].current_period == "2nd period"
+        assert entries[1].current_period == ""
+        assert entries[2].current_period == "1st period"
+
     def test_extracts_status_for_waiting_game(self):
         entries = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[2].status == "Waiting for 1st period"

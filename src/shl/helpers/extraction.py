@@ -568,6 +568,17 @@ def parse_live_games_html(html: str) -> List[ScheduleEntry]:
             if status_div:
                 status = re.sub(r"\s+", " ", status_div.get_text(strip=True)).strip()
 
+        # Parse game_clock and current_period from status text.
+        # Examples: "2nd period (01:49)", "1st period (19:20)", "Waiting for 1st period"
+        game_clock = ""
+        current_period = ""
+        clock_match = re.search(r"\((\d{1,2}:\d{2})\)", status)
+        if clock_match:
+            game_clock = clock_match.group(1)
+        period_match = re.search(r"(\d+(?:st|nd|rd|th)\s+period)", status, re.IGNORECASE)
+        if period_match:
+            current_period = period_match.group(1)
+
         entries.append(ScheduleEntry(
             date=today_str,
             time=game_time,
@@ -580,6 +591,8 @@ def parse_live_games_html(html: str) -> List[ScheduleEntry]:
             game_url=game_url,
             round="",
             status=status,
+            game_clock=game_clock,
+            current_period=current_period,
         ))
 
     return entries
