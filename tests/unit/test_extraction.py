@@ -602,3 +602,93 @@ def test_extract_schedule_games_from_listing_html_returns_none_when_no_last_upda
     )
     assert len(games) == 1
     assert page_last_update is None
+
+
+def test_get_session_returns_per_thread_instances():
+    """Each thread gets its own requests.Session instance."""
+    import threading
+    from src.shl.helpers.extraction import _get_session
+
+    sessions = {}
+    lock = threading.Lock()
+
+    def capture_session(name):
+        s = _get_session()
+        with lock:
+            sessions[name] = s
+
+    threads = [
+        threading.Thread(target=capture_session, args=(f"t{i}",))
+        for i in range(3)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # All sessions should be distinct objects.
+    session_ids = [id(s) for s in sessions.values()]
+    assert len(set(session_ids)) == 3, "Each thread should have its own session"
+
+
+def test_get_session_reuses_within_same_thread():
+    """Same thread always gets the same session instance."""
+    from src.shl.helpers.extraction import _get_session
+
+    s1 = _get_session()
+    s2 = _get_session()
+    assert s1 is s2
+
+
+def test_fetch_html_thread_safe_concurrent_calls(monkeypatch):
+    """Multiple threads can call fetch_html concurrently without sharing session state."""
+    import threading
+    from unittest.mock import MagicMock
+    import requests
+    from src.shl.helpers.extraction import _thread_local, fetch_html
+
+    results = {}
+    errors = {}
+    lock = threading.Lock()
+
+    def make_fake_get(thread_name):
+        def fake_get(url, timeout=20):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.raise_for_status = MagicMock()
+            resp.encoding = "utf-8"
+            resp.text = f"<html>{thread_name}</html>"
+            return resp
+        return fake_get
+
+    # Clear any existing thread-local session in the main thread.
+    if hasattr(_thread_local, "session"):
+        del _thread_local.session
+
+    def run_fetch(name, url):
+        try:
+            # Patch the session for this thread after it's created.
+            from src.shl.helpers.extraction import _get_session
+            session = _get_session()
+            session.get = make_fake_get(name)
+            result = fetch_html(url)
+            with lock:
+                results[name] = result
+        except Exception as exc:
+            with lock:
+                errors[name] = exc
+
+    threads = [
+        threading.Thread(target=run_fetch, args=(f"t{i}", f"http://example.com/{i}"))
+        for i in range(4)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"Unexpected errors: {errors}"
+    assert len(results) == 4
+    # Each thread got its own response content.
+    for name, html in results.items():
+        assert name in html

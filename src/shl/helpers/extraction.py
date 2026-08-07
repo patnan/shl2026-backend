@@ -1,6 +1,7 @@
 import dataclasses
 import json
 import re
+import threading
 import time
 from datetime import date
 from pathlib import Path
@@ -14,8 +15,19 @@ from src.shl.models import Game, ScheduleEntry
 from .parsing import parse_actions, parse_top_stats
 
 
-# Module-level session for connection pooling (reuses TCP+TLS connections).
-_session = requests.Session()
+# Per-thread session for connection pooling.
+# requests.Session is not thread-safe; using threading.local ensures each thread
+# gets its own Session instance (with its own connection pool and cookie jar).
+_thread_local = threading.local()
+
+
+def _get_session() -> requests.Session:
+    """Return a per-thread requests.Session (created lazily)."""
+    session = getattr(_thread_local, "session", None)
+    if session is None:
+        session = requests.Session()
+        _thread_local.session = session
+    return session
 
 
 class GameScrapeError(RuntimeError):
@@ -74,7 +86,7 @@ def fetch_html(url: str, timeout: int = 20) -> str:
         for candidate_index, candidate_url in enumerate(candidate_urls):
             for attempt in range(1, 4):
                 try:
-                    response = _session.get(candidate_url, timeout=timeout)
+                    response = _get_session().get(candidate_url, timeout=timeout)
                     response.raise_for_status()
                     response.encoding = "utf-8"
                     return response.text
@@ -110,7 +122,7 @@ def fetch_html_with_headers(url: str, timeout: int = 20) -> Tuple[str, Dict[str,
     try:
         for attempt in range(1, 4):
             try:
-                response = _session.get(url, timeout=timeout)
+                response = _get_session().get(url, timeout=timeout)
                 response.raise_for_status()
                 response.encoding = "utf-8"
                 return response.text, dict(response.headers)
