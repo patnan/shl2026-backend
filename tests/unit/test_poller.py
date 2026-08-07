@@ -179,10 +179,11 @@ def test_seed_season_targets_creates_schedule_and_standings(monkeypatch, tmp_pat
     assert result["goalie_stats_target"] == 1
     assert result["rosters_target"] == 1
     assert result["team_info_target"] == 1
-    assert result["total_targets"] == 6
+    assert result["live_games_target"] == 1
+    assert result["total_targets"] == 7
 
     targets = list_poll_targets(tmp_path)
-    assert len(targets) == 6
+    assert len(targets) == 7
     assert {(t.target_type, t.target_key) for t in targets} == {
         ("schedule", "18263"),
         ("standings", "18263"),
@@ -190,6 +191,7 @@ def test_seed_season_targets_creates_schedule_and_standings(monkeypatch, tmp_pat
         ("goalie_stats", "18263"),
         ("rosters", "18263"),
         ("team_info", "18263"),
+        ("live_games", "18263"),
     }
 
 

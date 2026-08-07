@@ -343,7 +343,7 @@ class TestPollerTeamInfoTarget:
         from src.shl.poller import seed_season_targets
         result = seed_season_targets(tmp_path, 20961)
         assert result["team_info_target"] == 1
-        assert result["total_targets"] == 6
+        assert result["total_targets"] == 7
 
     def test_team_info_poll_target_created(self, tmp_path):
         from src.shl.poller import seed_season_targets

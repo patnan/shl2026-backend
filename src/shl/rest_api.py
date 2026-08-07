@@ -285,11 +285,12 @@ def create_app(cache_dir: Path) -> FastAPI:
     def season_live_games(season_id: int) -> Dict[str, Any]:
         """Return today's live/upcoming games scraped from the SweHockey Live page.
 
-        Returns cached data if available. Use the poller or fetch_live_games to refresh.
+        Data is refreshed every 30s by the poller. On first request (before poller
+        has run), fetches on demand and caches the result.
         """
         games = get_live_games(season_id, cache_dir)
         if games is None:
-            # Try fetching on demand if not yet cached.
+            # Bootstrap cache on first request before poller has populated it.
             try:
                 games = fetch_live_games(season_id, cache_dir)
             except Exception:

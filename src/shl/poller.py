@@ -11,7 +11,7 @@ from time import sleep as _sleep
 from typing import Any, Dict, List, Optional
 
 from src.shl.game import fetch_game
-from src.shl.schedule import fetch_schedule, get_standings
+from src.shl.schedule import fetch_live_games, fetch_schedule, get_standings
 from src.shl.standings import fetch_table
 from src.shl.stats import fetch_goalie_stats, fetch_player_stats, fetch_rosters, fetch_team_info
 from src.shl.models import PollTarget
@@ -37,6 +37,7 @@ DEFAULT_SUCCESS_INTERVAL_SECONDS = {
     "game": 30,
     "schedule": 60,  # Default fallback, overridden dynamically.
     "standings": 5 * 60,
+    "live_games": 30,              # Every 30 seconds.
     "player_stats": 2 * 60 * 60,  # Every 2 hours.
     "goalie_stats": 2 * 60 * 60,  # Every 2 hours.
     "rosters": 24 * 60 * 60,       # Every 24 hours.
@@ -52,6 +53,7 @@ DEFAULT_ERROR_BASE_INTERVAL_SECONDS = {
     "game": 30,
     "schedule": 60,
     "standings": 60,
+    "live_games": 30,
     "player_stats": 5 * 60,
     "goalie_stats": 5 * 60,
     "rosters": 5 * 60,
@@ -63,6 +65,7 @@ CIRCUIT_BREAKER_COOLDOWN_SECONDS = {
     "game": 5 * 60,
     "schedule": 20 * 60,
     "standings": 10 * 60,
+    "live_games": 5 * 60,
 }
 BACKOFF_JITTER_RATIO = 0.15
 
@@ -244,6 +247,13 @@ def seed_season_targets(
         enabled=True,
         next_poll_at=now_iso,
     )
+    upsert_poll_target(
+        cache_dir,
+        target_type="live_games",
+        target_key=str(season_id),
+        enabled=True,
+        next_poll_at=now_iso,
+    )
 
     return {
         "season_id": season_id,
@@ -253,7 +263,8 @@ def seed_season_targets(
         "goalie_stats_target": 1,
         "rosters_target": 1,
         "team_info_target": 1,
-        "total_targets": 6,
+        "live_games_target": 1,
+        "total_targets": 7,
     }
 
 
@@ -369,6 +380,10 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
 
     if target_type == "team_info":
         fetch_team_info(int(target_key), cache_dir, force_reparse=True)
+        return
+
+    if target_type == "live_games":
+        fetch_live_games(int(target_key), cache_dir)
         return
 
     raise PollerError(f"Unsupported target_type '{target_type}'")

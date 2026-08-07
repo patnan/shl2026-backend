@@ -130,8 +130,8 @@ paths:
         Scraped from the SweHockey Live page for the season. Returns all games
         listed as upcoming or in-progress for today. Unlike /games/today (which
         filters the stored schedule by date), this fetches the dedicated Live page
-        that shows real-time game status during game days. Data is fetched on demand
-        if not yet cached.
+        that shows real-time game status during game days. Data is refreshed every
+        30 seconds by the poller and fetched on demand if not yet cached.
       parameters:
         - $ref: "#/components/parameters/SeasonId"
       responses:

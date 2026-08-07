@@ -326,3 +326,87 @@ class TestLiveGamesEndpoint:
         payload = response.json()
         assert payload["data"] == []
         assert payload["meta"]["count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Poller target tests
+# ---------------------------------------------------------------------------
+
+
+class TestPollerLiveGamesTarget:
+    def test_seed_includes_live_games_target(self, tmp_path):
+        from src.shl.poller import seed_season_targets
+
+        result = seed_season_targets(tmp_path, season_id=18263)
+        assert result["live_games_target"] == 1
+        assert result["total_targets"] == 7
+
+    def test_live_games_poll_target_created(self, tmp_path):
+        from src.shl.poller import seed_season_targets
+        from src.shl.store import list_poll_targets
+
+        seed_season_targets(tmp_path, season_id=18263)
+        targets = list_poll_targets(tmp_path)
+        target_types = [t.target_type for t in targets]
+        assert "live_games" in target_types
+
+    def test_run_target_calls_fetch_live_games(self, monkeypatch, tmp_path):
+        from datetime import datetime, timedelta, timezone
+
+        from src.shl.poller import run_poller_tick
+        from src.shl.store import upsert_poll_target
+
+        now = datetime(2026, 8, 7, 12, 0, 0, tzinfo=timezone.utc)
+        upsert_poll_target(
+            tmp_path,
+            target_type="live_games",
+            target_key="18263",
+            enabled=True,
+            next_poll_at=(now - timedelta(seconds=1)).isoformat(),
+        )
+
+        calls = {"fetch_live_games": 0}
+
+        def fake_fetch_live_games(season_id, db_dir):
+            calls["fetch_live_games"] += 1
+            assert season_id == 18263
+            assert db_dir == tmp_path
+            return []
+
+        monkeypatch.setattr("src.shl.poller.fetch_live_games", fake_fetch_live_games)
+
+        results = run_poller_tick(tmp_path, now=now)
+
+        assert len(results) == 1
+        assert results[0]["status"] == "ok"
+        assert calls["fetch_live_games"] == 1
+
+    def test_run_target_handles_fetch_error(self, monkeypatch, tmp_path):
+        from datetime import datetime, timedelta, timezone
+
+        from src.shl.poller import run_poller_tick
+        from src.shl.store import upsert_poll_target
+
+        now = datetime(2026, 8, 7, 12, 0, 0, tzinfo=timezone.utc)
+        upsert_poll_target(
+            tmp_path,
+            target_type="live_games",
+            target_key="18263",
+            enabled=True,
+            next_poll_at=(now - timedelta(seconds=1)).isoformat(),
+        )
+
+        def fake_fetch_live_games(season_id, db_dir):
+            raise RuntimeError("upstream down")
+
+        monkeypatch.setattr("src.shl.poller.fetch_live_games", fake_fetch_live_games)
+
+        results = run_poller_tick(tmp_path, now=now)
+
+        assert len(results) == 1
+        assert results[0]["status"] == "error"
+
+    def test_success_interval_is_30_seconds(self):
+        from src.shl.poller import DEFAULT_SUCCESS_INTERVAL_SECONDS
+
+        assert DEFAULT_SUCCESS_INTERVAL_SECONDS["live_games"] == 30

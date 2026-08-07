@@ -99,9 +99,15 @@ Scraped from SweHockey stats pages. Low-frequency polling since this data change
 Methods:
 - [src/shl/stats.py](src/shl/stats.py) fetch_player_stats, fetch_goalie_stats, fetch_rosters, fetch_team_info
 
-### 6) Live Game Scores (partially implemented)
+### 6) Live Game Scores
 
 The SweHockey Live page at `/ScheduleAndResults/Live/{season_id}` lists today's upcoming and in-progress games. A parser (`parse_live_games_html`) extracts home team, away team, start time, and venue from the responsive HTML. Data is stored in the `live_games` table and served via `GET /seasons/{season_id}/games/live`.
+
+| Target type | Source URL | Cadence |
+|---|---|---|
+| `live_games` | `/ScheduleAndResults/Live/{season_id}` | Every 30 seconds |
+
+The poller keeps the live games cache fresh every 30 seconds. If the cache is empty (first request before poller has run), the API endpoint fetches on demand and caches the result.
 
 Current implementation handles upcoming games (time + venue). When games are in progress, the same Result column will show the live score — the parser is designed to detect this and populate `game_result` accordingly. Further evolution (period info, game status, linking to game detail pages) will be added as the 2026-27 season progresses and we observe live HTML structure during actual games.
 
