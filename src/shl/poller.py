@@ -81,6 +81,8 @@ def _to_iso(value: datetime) -> str:
 def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optional[Path] = None, target_key: Optional[str] = None) -> str:
     if target_type == "schedule" and cache_dir is not None and target_key is not None:
         interval = _compute_schedule_interval(cache_dir, int(target_key), now)
+    elif target_type == "live_games" and cache_dir is not None and target_key is not None:
+        interval = _compute_live_games_interval(cache_dir, int(target_key), now)
     else:
         interval = DEFAULT_SUCCESS_INTERVAL_SECONDS.get(target_type, 60)
     return _to_iso(now + timedelta(seconds=interval))
@@ -133,6 +135,56 @@ def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -
 
     # Games today but outside active window.
     return SCHEDULE_INTERVAL_GAME_DAY
+
+
+# Live games polling intervals.
+LIVE_GAMES_INTERVAL_ACTIVE = 30             # Within game window: every 30 seconds.
+LIVE_GAMES_INTERVAL_IDLE = 120 * 60          # Outside game window: every 120 minutes.
+
+
+def _compute_live_games_interval(cache_dir: Path, season_id: int, now: datetime) -> int:
+    """Determine live games polling interval based on today's game times.
+
+    - No games today: every 15 minutes.
+    - Within active window (15 min before first game to 3h after last game starts): every 30 seconds.
+    - Outside active window: every 15 minutes.
+    """
+    schedule = load_schedule(cache_dir, season_id)
+    if not schedule:
+        return LIVE_GAMES_INTERVAL_IDLE
+
+    today_str = now.date().isoformat()
+    todays_games = [e for e in schedule if e.date == today_str]
+
+    if not todays_games:
+        return LIVE_GAMES_INTERVAL_IDLE
+
+    start_times: List[datetime] = []
+    for entry in todays_games:
+        if entry.time:
+            try:
+                hour, minute = entry.time.split(":")[:2]
+                game_start = datetime(
+                    now.year, now.month, now.day,
+                    int(hour), int(minute), tzinfo=now.tzinfo,
+                )
+                start_times.append(game_start)
+            except (ValueError, IndexError):
+                pass
+
+    if not start_times:
+        return LIVE_GAMES_INTERVAL_IDLE
+
+    first_start = min(start_times)
+    last_start = max(start_times)
+
+    window_begin = first_start - timedelta(minutes=15)
+    window_end = last_start + timedelta(hours=3)
+
+    if window_begin <= now <= window_end:
+        return LIVE_GAMES_INTERVAL_ACTIVE
+
+    return LIVE_GAMES_INTERVAL_IDLE
 
 
 def _apply_jitter(interval_seconds: int, jitter_ratio: float = BACKOFF_JITTER_RATIO) -> int:

@@ -279,3 +279,59 @@ def test_compute_error_next_poll_uses_circuit_breaker_cooldown(monkeypatch):
     next_poll_at = _compute_error_next_poll("schedule", now, current_error_count=5)
     retry_seconds = int((datetime.fromisoformat(next_poll_at) - now).total_seconds())
     assert retry_seconds >= 20 * 60
+
+
+def test_live_games_interval_active_during_game_window(monkeypatch, tmp_path):
+    from src.shl.poller import _compute_live_games_interval, LIVE_GAMES_INTERVAL_ACTIVE
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_schedule
+
+    entries = [
+        ScheduleEntry(date="2026-08-07", time="16:00", home_team="A", away_team="B",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+        ScheduleEntry(date="2026-08-07", time="19:00", home_team="C", away_team="D",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, entries)
+
+    # 17:00 is within window (15:45 to 22:00)
+    now = datetime(2026, 8, 7, 17, 0, 0, tzinfo=timezone.utc)
+    assert _compute_live_games_interval(tmp_path, 21139, now) == LIVE_GAMES_INTERVAL_ACTIVE
+
+
+def test_live_games_interval_idle_outside_game_window(monkeypatch, tmp_path):
+    from src.shl.poller import _compute_live_games_interval, LIVE_GAMES_INTERVAL_IDLE
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_schedule
+
+    entries = [
+        ScheduleEntry(date="2026-08-07", time="16:00", home_team="A", away_team="B",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+        ScheduleEntry(date="2026-08-07", time="19:00", home_team="C", away_team="D",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, entries)
+
+    # 10:00 is before window (15:45)
+    now = datetime(2026, 8, 7, 10, 0, 0, tzinfo=timezone.utc)
+    assert _compute_live_games_interval(tmp_path, 21139, now) == LIVE_GAMES_INTERVAL_IDLE
+    assert LIVE_GAMES_INTERVAL_IDLE == 120 * 60
+
+    # 23:00 is after window (22:00)
+    now = datetime(2026, 8, 7, 23, 0, 0, tzinfo=timezone.utc)
+    assert _compute_live_games_interval(tmp_path, 21139, now) == LIVE_GAMES_INTERVAL_IDLE
+
+
+def test_live_games_interval_idle_when_no_games_today(tmp_path):
+    from src.shl.poller import _compute_live_games_interval, LIVE_GAMES_INTERVAL_IDLE
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_schedule
+
+    entries = [
+        ScheduleEntry(date="2026-08-08", time="18:00", home_team="A", away_team="B",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, entries)
+
+    now = datetime(2026, 8, 7, 17, 0, 0, tzinfo=timezone.utc)
+    assert _compute_live_games_interval(tmp_path, 21139, now) == LIVE_GAMES_INTERVAL_IDLE
