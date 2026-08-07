@@ -187,6 +187,9 @@ One row from a season schedule page.
 | `venue` | `str` | Arena name |
 | `game_url` | `str` | Full URL to the game events page (empty for unstarted seasons) |
 | `round` | `str` | Round number as a string (from page header, or empty if inferred by date) |
+| `status` | `str` | Game status during live games (e.g. `"2nd period (01:49)"`, `"Waiting for 1st period"`). Empty when not live. |
+| `game_clock` | `str` | Current game clock parsed from status (e.g. `"01:49"`). Empty when not in progress. |
+| `current_period` | `str` | Current period parsed from status (e.g. `"2nd period"`). Empty when not in progress. |
 
 Computed property (included in `to_dict` output):
 

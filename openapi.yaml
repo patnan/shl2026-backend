@@ -424,6 +424,7 @@ paths:
     get:
       operationId: getGameDetail
       summary: Game detail (score, events, team stats)
+      description: Always fetches fresh data from SweHockey. Suitable for live game polling.
       parameters:
         - name: game_id
           in: path
