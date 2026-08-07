@@ -25,7 +25,7 @@ Identified 2026-08-07. Sorted by category.
 
 ## Testing
 
-- [ ] **Test `_are_games_in_progress` / `_seconds_until_games_finish`** — New helper functions for stats deferral have no dedicated tests.
+- [x] **Test `_are_games_in_progress` / `_seconds_until_games_finish`** — New helper functions for stats deferral have no dedicated tests.
 - [ ] **Test schedule hash-skip in poller context** — The poller calls `fetch_schedule(force_reparse=True)` with hash-skip, but no poller-level test verifies it.
 - [ ] **Expand notifier tests** — Only builder is tested. Add tests for full worker loop (event processing, mark processed, error handling).
 

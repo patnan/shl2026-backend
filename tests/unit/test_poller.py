@@ -638,3 +638,210 @@ def test_parallel_execution_single_target_works(monkeypatch, tmp_path):
     assert len(results) == 1
     assert results[0]["status"] == "ok"
     assert results[0]["target_type"] == "standings"
+
+
+# ---------------------------------------------------------------------------
+# Tests for _are_games_in_progress
+# ---------------------------------------------------------------------------
+
+
+def test_are_games_in_progress_false_when_no_live_games_and_no_schedule(tmp_path):
+    from src.shl.poller import _are_games_in_progress
+
+    now = datetime(2026, 8, 7, 18, 0, 0, tzinfo=timezone.utc)
+    assert _are_games_in_progress(tmp_path, 21139, now) is False
+
+
+def test_are_games_in_progress_false_when_all_finished(tmp_path):
+    from src.shl.poller import _are_games_in_progress
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_live_games, save_schedule
+
+    now = datetime(2026, 8, 7, 20, 0, 0, tzinfo=timezone.utc)
+
+    live = [
+        ScheduleEntry(
+            date="2026-08-07", time="16:00", home_team="Team A", away_team="Team B",
+            game_result="3 - 1", periods="(1-0, 1-1, 1-0)", spectators="", venue="",
+            game_url="", round="", status="Game Finished",
+        ),
+        ScheduleEntry(
+            date="2026-08-07", time="18:00", home_team="Team C", away_team="Team D",
+            game_result="2 - 4", periods="(0-2, 1-1, 1-1)", spectators="", venue="",
+            game_url="", round="", status="Final Score",
+        ),
+    ]
+    save_live_games(tmp_path, 21139, live)
+
+    schedule = [
+        ScheduleEntry(date="2026-08-07", time="16:00", home_team="Team A", away_team="Team B",
+                      game_result="3-1", periods="", spectators="", venue="", game_url="", round=""),
+        ScheduleEntry(date="2026-08-07", time="18:00", home_team="Team C", away_team="Team D",
+                      game_result="2-4", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, schedule)
+
+    assert _are_games_in_progress(tmp_path, 21139, now) is False
+
+
+def test_are_games_in_progress_true_when_game_has_result_but_not_finished(tmp_path):
+    from src.shl.poller import _are_games_in_progress
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_live_games, save_schedule
+
+    now = datetime(2026, 8, 7, 17, 30, 0, tzinfo=timezone.utc)
+
+    live = [
+        ScheduleEntry(
+            date="2026-08-07", time="16:00", home_team="Team A", away_team="Team B",
+            game_result="2 - 1", periods="(1-0, 1-1)", spectators="", venue="",
+            game_url="", round="", status="2nd period (05:00)",
+            game_clock="05:00", current_period="2nd period",
+        ),
+    ]
+    save_live_games(tmp_path, 21139, live)
+
+    schedule = [
+        ScheduleEntry(date="2026-08-07", time="16:00", home_team="Team A", away_team="Team B",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, schedule)
+
+    assert _are_games_in_progress(tmp_path, 21139, now) is True
+
+
+def test_are_games_in_progress_true_when_not_started_within_game_window(tmp_path):
+    from src.shl.poller import _are_games_in_progress
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_live_games, save_schedule
+
+    now = datetime(2026, 8, 7, 18, 55, 0, tzinfo=timezone.utc)
+
+    # Live game with no result yet — game is about to start.
+    live = [
+        ScheduleEntry(
+            date="2026-08-07", time="19:00", home_team="Team C", away_team="Team D",
+            game_result="", periods="", spectators="", venue="",
+            game_url="", round="", status="",
+        ),
+    ]
+    save_live_games(tmp_path, 21139, live)
+
+    schedule = [
+        ScheduleEntry(date="2026-08-07", time="19:00", home_team="Team C", away_team="Team D",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, schedule)
+
+    assert _are_games_in_progress(tmp_path, 21139, now) is True
+
+
+def test_are_games_in_progress_false_when_no_games_today(tmp_path):
+    from src.shl.poller import _are_games_in_progress
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_live_games, save_schedule
+
+    now = datetime(2026, 8, 7, 18, 0, 0, tzinfo=timezone.utc)
+
+    # Live games list is empty (no games on live page).
+    live = [
+        ScheduleEntry(
+            date="2026-08-07", time="19:00", home_team="Team A", away_team="Team B",
+            game_result="", periods="", spectators="", venue="",
+            game_url="", round="", status="",
+        ),
+    ]
+    save_live_games(tmp_path, 21139, live)
+
+    # Schedule only has games tomorrow.
+    schedule = [
+        ScheduleEntry(date="2026-08-08", time="19:00", home_team="Team A", away_team="Team B",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, schedule)
+
+    assert _are_games_in_progress(tmp_path, 21139, now) is False
+
+
+# ---------------------------------------------------------------------------
+# Tests for _seconds_until_games_finish
+# ---------------------------------------------------------------------------
+
+
+def test_seconds_until_games_finish_returns_at_least_30_min(tmp_path):
+    from src.shl.poller import _seconds_until_games_finish
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_schedule
+
+    # Game started 4 hours ago — estimated end was 1h ago, but floor is 30 min.
+    schedule = [
+        ScheduleEntry(date="2026-08-07", time="14:00", home_team="Team A", away_team="Team B",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, schedule)
+
+    now = datetime(2026, 8, 7, 18, 0, 0, tzinfo=timezone.utc)
+    result = _seconds_until_games_finish(tmp_path, 21139, now)
+    assert result == 30 * 60
+
+
+def test_seconds_until_games_finish_correct_estimate(tmp_path):
+    from src.shl.poller import _seconds_until_games_finish
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_schedule
+
+    # Game starts at 19:00, estimated end at 22:00. Now is 20:00 → 2h remaining = 7200s.
+    schedule = [
+        ScheduleEntry(date="2026-08-07", time="19:00", home_team="Team A", away_team="Team B",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, schedule)
+
+    now = datetime(2026, 8, 7, 20, 0, 0, tzinfo=timezone.utc)
+    result = _seconds_until_games_finish(tmp_path, 21139, now)
+    assert result == 2 * 60 * 60  # 7200 seconds
+
+
+def test_seconds_until_games_finish_fallback_when_no_schedule(tmp_path):
+    from src.shl.poller import _seconds_until_games_finish
+
+    now = datetime(2026, 8, 7, 18, 0, 0, tzinfo=timezone.utc)
+    result = _seconds_until_games_finish(tmp_path, 21139, now)
+    assert result == 30 * 60
+
+
+def test_seconds_until_games_finish_fallback_when_no_games_today(tmp_path):
+    from src.shl.poller import _seconds_until_games_finish
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_schedule
+
+    # Schedule has games but not today.
+    schedule = [
+        ScheduleEntry(date="2026-08-08", time="19:00", home_team="Team A", away_team="Team B",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, schedule)
+
+    now = datetime(2026, 8, 7, 18, 0, 0, tzinfo=timezone.utc)
+    result = _seconds_until_games_finish(tmp_path, 21139, now)
+    assert result == 30 * 60
+
+
+def test_seconds_until_games_finish_uses_latest_start_time(tmp_path):
+    from src.shl.poller import _seconds_until_games_finish
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_schedule
+
+    # Multiple games: 16:00 and 19:00. Should use 19:00 → end at 22:00.
+    schedule = [
+        ScheduleEntry(date="2026-08-07", time="16:00", home_team="Team A", away_team="Team B",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+        ScheduleEntry(date="2026-08-07", time="19:00", home_team="Team C", away_team="Team D",
+                      game_result="", periods="", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, schedule)
+
+    # Now is 20:30 → estimated end is 22:00 → remaining is 1.5h = 5400s.
+    now = datetime(2026, 8, 7, 20, 30, 0, tzinfo=timezone.utc)
+    result = _seconds_until_games_finish(tmp_path, 21139, now)
+    assert result == int(1.5 * 60 * 60)  # 5400 seconds
