@@ -35,7 +35,7 @@ def test_health_endpoint(tmp_path):
 
 
 def test_schedule_endpoint_returns_404_when_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr("src.shl.rest_api.get_schedule", lambda season_id, cache_dir: None)
+    monkeypatch.setattr("src.shl.routers.schedule.get_schedule", lambda season_id, cache_dir: None)
     client = TestClient(create_app(tmp_path))
 
     response = client.get("/seasons/18263/schedule")
@@ -58,8 +58,8 @@ def test_schedule_endpoint_returns_data(monkeypatch, tmp_path):
                     round="1",
                 )
     ]
-    monkeypatch.setattr("src.shl.rest_api.get_schedule", lambda season_id, cache_dir: schedule)
-    monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
+    monkeypatch.setattr("src.shl.routers.schedule.get_schedule", lambda season_id, cache_dir: schedule)
+    monkeypatch.setattr("src.shl.routers.schedule.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
     client = TestClient(create_app(tmp_path))
 
     response = client.get("/seasons/18263/schedule")
@@ -78,8 +78,8 @@ def test_games_by_date_endpoint_uses_date_query(monkeypatch, tmp_path):
         captured["date"] = game_date
         return []
 
-    monkeypatch.setattr("src.shl.rest_api.get_games_for_date", fake_get_games_for_date)
-    monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
+    monkeypatch.setattr("src.shl.routers.schedule.get_games_for_date", fake_get_games_for_date)
+    monkeypatch.setattr("src.shl.routers.schedule.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
     client = TestClient(create_app(tmp_path))
 
     response = client.get("/seasons/18263/games", params={"date": "2025-09-16"})
@@ -102,8 +102,8 @@ def test_games_endpoint_returns_all_games_without_date(monkeypatch, tmp_path):
             game_url="", round="2",
         ),
     ]
-    monkeypatch.setattr("src.shl.rest_api.get_schedule", lambda season_id, cache_dir: schedule)
-    monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
+    monkeypatch.setattr("src.shl.routers.schedule.get_schedule", lambda season_id, cache_dir: schedule)
+    monkeypatch.setattr("src.shl.routers.schedule.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
     client = TestClient(create_app(tmp_path))
 
     response = client.get("/seasons/18263/games")
@@ -115,8 +115,8 @@ def test_games_endpoint_returns_all_games_without_date(monkeypatch, tmp_path):
 
 
 def test_games_endpoint_returns_404_when_not_fetched(monkeypatch, tmp_path):
-    monkeypatch.setattr("src.shl.rest_api.get_schedule", lambda season_id, cache_dir: None)
-    monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: None)
+    monkeypatch.setattr("src.shl.routers.schedule.get_schedule", lambda season_id, cache_dir: None)
+    monkeypatch.setattr("src.shl.routers.schedule.get_schedule_fetched_at", lambda cache_dir, season_id: None)
     client = TestClient(create_app(tmp_path))
 
     response = client.get("/seasons/18263/games")
@@ -139,8 +139,8 @@ def test_played_games_endpoint_returns_list(monkeypatch, tmp_path):
                     round="1",
                 )
     ]
-    monkeypatch.setattr("src.shl.rest_api.get_all_played_games", lambda season_id, cache_dir: entries)
-    monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
+    monkeypatch.setattr("src.shl.routers.schedule.get_all_played_games", lambda season_id, cache_dir: entries)
+    monkeypatch.setattr("src.shl.routers.schedule.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
     client = TestClient(create_app(tmp_path))
 
     response = client.get("/seasons/18263/games/played")
@@ -169,8 +169,8 @@ def test_standings_endpoint_returns_data(monkeypatch, tmp_path):
             gwsl=0,
         )
     ]
-    monkeypatch.setattr("src.shl.rest_api.get_standings", lambda season_id, cache_dir: rows)
-    monkeypatch.setattr("src.shl.rest_api.get_all_played_games", lambda season_id, cache_dir: [
+    monkeypatch.setattr("src.shl.routers.standings.get_standings", lambda season_id, cache_dir: rows)
+    monkeypatch.setattr("src.shl.routers.standings.get_all_played_games", lambda season_id, cache_dir: [
         ScheduleEntry(
                     date="2025-09-16",
                     time="19:00",
@@ -184,13 +184,13 @@ def test_standings_endpoint_returns_data(monkeypatch, tmp_path):
                     round="1",
                 )
     ])
-    monkeypatch.setattr("src.shl.rest_api.get_games_freshness", lambda cache_dir, game_ids: {
+    monkeypatch.setattr("src.shl.routers.standings.get_games_freshness", lambda cache_dir, game_ids: {
         "requested_game_count": 1,
         "cached_game_count": 1,
         "latest_fetched_at": "2026-08-01T10:10:00",
         "oldest_fetched_at": "2026-08-01T10:10:00",
     })
-    monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
+    monkeypatch.setattr("src.shl.routers.standings.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
     client = TestClient(create_app(tmp_path))
 
     response = client.get("/seasons/18263/standings")
@@ -258,7 +258,7 @@ def test_game_details_returns_fresh_game(monkeypatch, tmp_path):
         }
     )
     monkeypatch.setattr("src.shl.game.extract_game_by_id", lambda game_id: game)
-    monkeypatch.setattr("src.shl.rest_api.get_game_fetched_at", lambda cache_dir, game_id: "2026-08-01T10:10:00")
+    monkeypatch.setattr("src.shl.routers.games.get_game_fetched_at", lambda cache_dir, game_id: "2026-08-01T10:10:00")
     client = TestClient(create_app(tmp_path))
 
     response = client.get("/games/1004308")

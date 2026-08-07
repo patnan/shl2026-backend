@@ -641,9 +641,9 @@ class TestLiveGamesEndpoint:
                 game_result="", periods="", spectators="", venue="Catena Arena", game_url="", round="", status="",
             ),
         ]
-        monkeypatch.setattr("src.shl.rest_api.get_live_games", lambda season_id, cache_dir: games)
-        monkeypatch.setattr("src.shl.rest_api.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T10:00:00")
-        monkeypatch.setattr("src.shl.rest_api.get_live_games_page_last_update", lambda cache_dir, season_id: "2026-08-07 09:55:00")
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games", lambda season_id, cache_dir: games)
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T10:00:00")
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games_page_last_update", lambda cache_dir, season_id: "2026-08-07 09:55:00")
 
         client = TestClient(create_app(tmp_path))
         response = client.get("/seasons/21139/games/live")
@@ -661,10 +661,10 @@ class TestLiveGamesEndpoint:
                 game_result="", periods="", spectators="", venue="Tegera Arena", game_url="", round="", status="",
             ),
         ]
-        monkeypatch.setattr("src.shl.rest_api.get_live_games", lambda season_id, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_live_games", lambda season_id, cache_dir: (games, "2026-08-07 11:00:00", None))
-        monkeypatch.setattr("src.shl.rest_api.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T11:00:00")
-        monkeypatch.setattr("src.shl.rest_api.get_live_games_page_last_update", lambda cache_dir, season_id: "2026-08-07 11:00:00")
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games", lambda season_id, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.schedule.fetch_live_games", lambda season_id, cache_dir: (games, "2026-08-07 11:00:00", None))
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T11:00:00")
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games_page_last_update", lambda cache_dir, season_id: "2026-08-07 11:00:00")
 
         client = TestClient(create_app(tmp_path))
         response = client.get("/seasons/21139/games/live")
@@ -674,12 +674,12 @@ class TestLiveGamesEndpoint:
         assert payload["data"][0]["home_team"] == "Leksands IF"
 
     def test_returns_502_when_fetch_fails(self, monkeypatch, tmp_path):
-        monkeypatch.setattr("src.shl.rest_api.get_live_games", lambda season_id, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games", lambda season_id, cache_dir: None)
 
         def raise_error(season_id, cache_dir):
             raise RuntimeError("upstream down")
 
-        monkeypatch.setattr("src.shl.rest_api.fetch_live_games", raise_error)
+        monkeypatch.setattr("src.shl.routers.schedule.fetch_live_games", raise_error)
 
         client = TestClient(create_app(tmp_path))
         response = client.get("/seasons/21139/games/live")
@@ -687,9 +687,9 @@ class TestLiveGamesEndpoint:
         assert "Failed to fetch live games" in response.json()["error"]
 
     def test_returns_empty_list_when_no_games_today(self, monkeypatch, tmp_path):
-        monkeypatch.setattr("src.shl.rest_api.get_live_games", lambda season_id, cache_dir: [])
-        monkeypatch.setattr("src.shl.rest_api.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T10:00:00")
-        monkeypatch.setattr("src.shl.rest_api.get_live_games_page_last_update", lambda cache_dir, season_id: None)
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games", lambda season_id, cache_dir: [])
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T10:00:00")
+        monkeypatch.setattr("src.shl.routers.schedule.get_live_games_page_last_update", lambda cache_dir, season_id: None)
 
         client = TestClient(create_app(tmp_path))
         response = client.get("/seasons/21139/games/live")

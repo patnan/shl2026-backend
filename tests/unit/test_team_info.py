@@ -179,8 +179,8 @@ class TestTeamsEndpoint:
         return TestClient(create_app(tmp_path))
 
     def test_returns_502_when_fetch_fails(self, monkeypatch, client):
-        monkeypatch.setattr("src.shl.rest_api.get_team_info", lambda season_id, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_team_info", lambda season_id, cache_dir: (_ for _ in ()).throw(RuntimeError("upstream down")))
+        monkeypatch.setattr("src.shl.routers.teams.get_team_info", lambda season_id, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.teams.fetch_team_info", lambda season_id, cache_dir: (_ for _ in ()).throw(RuntimeError("upstream down")))
         response = client.get("/seasons/20961/teams")
         assert response.status_code == 502
         assert "Failed to fetch" in response.json()["error"]
@@ -189,9 +189,9 @@ class TestTeamsEndpoint:
         teams = [
             TeamInfo(team="Brynäs IF", abbreviation="BIF"),
         ]
-        monkeypatch.setattr("src.shl.rest_api.get_team_info", lambda season_id, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_team_info", lambda season_id, cache_dir: teams)
-        monkeypatch.setattr("src.shl.rest_api.get_team_info_fetched_at", lambda cache_dir, season_id: "2026-08-06T12:00:00")
+        monkeypatch.setattr("src.shl.routers.teams.get_team_info", lambda season_id, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.teams.fetch_team_info", lambda season_id, cache_dir: teams)
+        monkeypatch.setattr("src.shl.routers.teams.get_team_info_fetched_at", lambda cache_dir, season_id: "2026-08-06T12:00:00")
         response = client.get("/seasons/20961/teams")
         assert response.status_code == 200
         assert len(response.json()["data"]) == 1
@@ -202,8 +202,8 @@ class TestTeamsEndpoint:
             TeamInfo(team="Brynäs IF", abbreviation="BIF"),
             TeamInfo(team="IF Björklöven", abbreviation="IFB"),
         ]
-        monkeypatch.setattr("src.shl.rest_api.get_team_info", lambda season_id, cache_dir: teams)
-        monkeypatch.setattr("src.shl.rest_api.get_team_info_fetched_at", lambda cache_dir, season_id: "2026-08-05T10:00:00")
+        monkeypatch.setattr("src.shl.routers.teams.get_team_info", lambda season_id, cache_dir: teams)
+        monkeypatch.setattr("src.shl.routers.teams.get_team_info_fetched_at", lambda cache_dir, season_id: "2026-08-05T10:00:00")
 
         response = client.get("/seasons/20961/teams")
         assert response.status_code == 200

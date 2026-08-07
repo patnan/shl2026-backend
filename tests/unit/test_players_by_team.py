@@ -211,8 +211,8 @@ class TestMergedEndpointWithStats:
         return TestClient(create_app(tmp_path))
 
     def test_stats_detail_endpoint(self, monkeypatch, client, sample_team_player_stats):
-        monkeypatch.setattr("src.shl.rest_api.fetch_team_player_stats", lambda season_id, cache_dir: sample_team_player_stats)
-        monkeypatch.setattr("src.shl.rest_api.get_team_player_stats_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
+        monkeypatch.setattr("src.shl.routers.players.fetch_team_player_stats", lambda season_id, cache_dir: sample_team_player_stats)
+        monkeypatch.setattr("src.shl.routers.players.get_team_player_stats_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
 
         response = client.get("/seasons/20961/players/Brynäs IF/10/stats")
         assert response.status_code == 200
@@ -237,15 +237,15 @@ class TestMergedEndpointWithStats:
         assert data["fo_pct"] == pytest.approx(55.56)
 
     def test_stats_detail_404_when_not_found(self, monkeypatch, client, sample_team_player_stats):
-        monkeypatch.setattr("src.shl.rest_api.fetch_team_player_stats", lambda season_id, cache_dir: sample_team_player_stats)
-        monkeypatch.setattr("src.shl.rest_api.get_team_player_stats_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
+        monkeypatch.setattr("src.shl.routers.players.fetch_team_player_stats", lambda season_id, cache_dir: sample_team_player_stats)
+        monkeypatch.setattr("src.shl.routers.players.get_team_player_stats_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
 
         response = client.get("/seasons/20961/players/Brynäs IF/99/stats")
         assert response.status_code == 404
 
     def test_stats_team_endpoint(self, monkeypatch, client, sample_team_player_stats):
-        monkeypatch.setattr("src.shl.rest_api.fetch_team_player_stats", lambda season_id, cache_dir: sample_team_player_stats)
-        monkeypatch.setattr("src.shl.rest_api.get_team_player_stats_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
+        monkeypatch.setattr("src.shl.routers.players.fetch_team_player_stats", lambda season_id, cache_dir: sample_team_player_stats)
+        monkeypatch.setattr("src.shl.routers.players.get_team_player_stats_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
 
         response = client.get("/seasons/20961/players/Brynäs IF/10/stats")
         assert response.status_code == 200

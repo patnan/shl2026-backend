@@ -727,200 +727,40 @@ def _store(cache_dir: Path) -> Store:
     return store
 
 
-def load_game(cache_dir: Path, game_id: int) -> Optional[Game]:
-    return _store(cache_dir).load_game(game_id)
-
-
-def load_games_batch(cache_dir: Path, game_ids: List[int]) -> List[Game]:
-    return _store(cache_dir).load_games_batch(game_ids)
-
-
-def get_game_fetched_at(cache_dir: Path, game_id: int) -> Optional[str]:
-    return _store(cache_dir).get_game_fetched_at(game_id)
-
-
-def save_game(cache_dir: Path, game_id: int, game: Game) -> None:
-    _store(cache_dir).save_game(game_id, game)
-
-
-def get_games_freshness(cache_dir: Path, game_ids: List[int]) -> dict:
-    return _store(cache_dir).get_games_freshness(game_ids)
-
-
-def load_standings(cache_dir: Path, season_id: int) -> Optional[List[StandingsRow]]:
-    return _store(cache_dir).load_standings(season_id)
-
-
-def get_standings_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_standings_fetched_at(season_id)
-
-
-def save_standings(cache_dir: Path, season_id: int, standings: List[StandingsRow]) -> None:
-    _store(cache_dir).save_standings(season_id, standings)
-
-
-def load_schedule(cache_dir: Path, season_id: int) -> Optional[List[ScheduleEntry]]:
-    return _store(cache_dir).load_schedule(season_id)
-
-
-def get_schedule_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_schedule_fetched_at(season_id)
-
-
-def get_schedule_page_last_update(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_schedule_page_last_update(season_id)
-
-
-def save_schedule(cache_dir: Path, season_id: int, schedule: List[ScheduleEntry], page_last_update: Optional[str] = None) -> None:
-    _store(cache_dir).save_schedule(season_id, schedule, page_last_update)
-
-
-def load_player_stats(cache_dir: Path, season_id: int) -> Optional[List[PlayerStat]]:
-    return _store(cache_dir).load_player_stats(season_id)
-
-
-def get_player_stats_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_player_stats_fetched_at(season_id)
-
-
-def save_player_stats(cache_dir: Path, season_id: int, stats: List[PlayerStat]) -> None:
-    _store(cache_dir).save_player_stats(season_id, stats)
-
-
-def load_goalie_stats(cache_dir: Path, season_id: int) -> Optional[List[GoalieStat]]:
-    return _store(cache_dir).load_goalie_stats(season_id)
-
-
-def get_goalie_stats_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_goalie_stats_fetched_at(season_id)
-
-
-def save_goalie_stats(cache_dir: Path, season_id: int, stats: List[GoalieStat]) -> None:
-    _store(cache_dir).save_goalie_stats(season_id, stats)
-
-
-def load_rosters(cache_dir: Path, season_id: int) -> Optional[List[RosterEntry]]:
-    return _store(cache_dir).load_rosters(season_id)
-
-
-def get_rosters_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_rosters_fetched_at(season_id)
-
-
-def save_rosters(cache_dir: Path, season_id: int, rosters: List[RosterEntry]) -> None:
-    _store(cache_dir).save_rosters(season_id, rosters)
-
-
-def load_team_info(cache_dir: Path, season_id: int) -> Optional[List[TeamInfo]]:
-    return _store(cache_dir).load_team_info(season_id)
-
-
-def get_team_info_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_team_info_fetched_at(season_id)
-
-
-def save_team_info(cache_dir: Path, season_id: int, teams: List[TeamInfo]) -> None:
-    _store(cache_dir).save_team_info(season_id, teams)
-
-
-def load_team_player_stats(cache_dir: Path, season_id: int) -> Optional[List[TeamPlayerStat]]:
-    return _store(cache_dir).load_team_player_stats(season_id)
-
-
-def get_team_player_stats_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_team_player_stats_fetched_at(season_id)
-
-
-def save_team_player_stats(cache_dir: Path, season_id: int, stats: List[TeamPlayerStat]) -> None:
-    _store(cache_dir).save_team_player_stats(season_id, stats)
-
-
-def save_shl_se_player(cache_dir: Path, season_id: int, team: str, jersey: int, data: dict, portrait_path: Optional[str]) -> None:
-    _store(cache_dir).save_shl_se_player(season_id, team, jersey, data, portrait_path)
-
-
-def load_shl_se_player(cache_dir: Path, season_id: int, team: str, jersey: int) -> Optional[dict]:
-    return _store(cache_dir).load_shl_se_player(season_id, team, jersey)
-
-
-def load_shl_se_team_players(cache_dir: Path, season_id: int, team: str) -> List[dict]:
-    return _store(cache_dir).load_shl_se_team_players(season_id, team)
-
-
-def get_shl_se_player_fetched_at(cache_dir: Path, season_id: int, team: str, jersey: int) -> Optional[str]:
-    return _store(cache_dir).get_shl_se_player_fetched_at(season_id, team, jersey)
-
-
-def upsert_poll_target(
-    cache_dir: Path,
-    target_type: str,
-    target_key: str,
-    enabled: bool = True,
-    next_poll_at: Optional[str] = None,
-    one_shot: bool = False,
-) -> int:
-    return _store(cache_dir).upsert_poll_target(target_type, target_key, enabled, next_poll_at, one_shot)
-
-
-def list_due_poll_targets(cache_dir: Path, now_iso: Optional[str] = None) -> List[PollTarget]:
-    return _store(cache_dir).list_due_poll_targets(now_iso)
-
-
-def list_poll_targets(
-    cache_dir: Path,
-    target_type: Optional[str] = None,
-    enabled_only: bool = False,
-) -> List[PollTarget]:
-    return _store(cache_dir).list_poll_targets(target_type, enabled_only)
-
-
-def update_poll_success(cache_dir: Path, target_id: int, duration_ms: int, next_poll_at: str) -> None:
-    _store(cache_dir).update_poll_success(target_id, duration_ms, next_poll_at)
-
-
-def update_poll_error(cache_dir: Path, target_id: int, duration_ms: int, next_poll_at: str) -> int:
-    return _store(cache_dir).update_poll_error(target_id, duration_ms, next_poll_at)
-
-
-def insert_domain_event(cache_dir: Path, event_type: str, aggregate_key: str, payload: dict) -> int:
-    return _store(cache_dir).insert_domain_event(event_type, aggregate_key, payload)
-
-
-def list_unprocessed_domain_events(cache_dir: Path, limit: int = 100) -> List[DomainEvent]:
-    return _store(cache_dir).list_unprocessed_domain_events(limit)
-
-
-def mark_domain_event_processed(cache_dir: Path, event_id: int, processed_at: Optional[str] = None) -> None:
-    _store(cache_dir).mark_domain_event_processed(event_id, processed_at)
-
-
-def register_device(cache_dir: Path, fcm_token: str, platform: str = "android") -> int:
-    return _store(cache_dir).register_device(fcm_token, platform)
-
-
-def unregister_device(cache_dir: Path, fcm_token: str) -> bool:
-    return _store(cache_dir).unregister_device(fcm_token)
-
-
-def list_device_tokens(cache_dir: Path) -> List[str]:
-    return _store(cache_dir).list_device_tokens()
-
-
-def load_live_games(cache_dir: Path, season_id: int) -> Optional[List[ScheduleEntry]]:
-    return _store(cache_dir).load_live_games(season_id)
-
-
-def get_live_games_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_live_games_fetched_at(season_id)
-
-
-def save_live_games(cache_dir: Path, season_id: int, games: List[ScheduleEntry], page_last_update: Optional[str] = None) -> None:
-    _store(cache_dir).save_live_games(season_id, games, page_last_update)
-
-
-def get_live_games_page_last_update(cache_dir: Path, season_id: int) -> Optional[str]:
-    return _store(cache_dir).get_live_games_page_last_update(season_id)
+# ------------------------------------------------------------------
+# Dynamic wrapper generation (backward-compatible module-level API)
+# ------------------------------------------------------------------
+# Callers import e.g. `from src.shl.store import load_game` and call
+# `load_game(cache_dir, game_id)`. These delegate to _store(cache_dir).method(...).
+
+import inspect as _inspect
 
 
 def cache_db_path(cache_dir: Path) -> Path:
+    """Return the SQLite database path for a given cache directory."""
     return cache_dir / "cache.db"
+
+
+# Names that are handled by __getattr__ (all Store public methods).
+_STORE_METHODS = [
+    name for name, _ in _inspect.getmembers(Store, predicate=_inspect.isfunction)
+    if not name.startswith("_")
+]
+
+
+def __getattr__(name: str):
+    """Auto-generate module-level wrappers for Store methods.
+
+    When callers do `from src.shl.store import load_game`, Python calls
+    __getattr__('load_game'). We return a function that takes cache_dir
+    as first arg and delegates to _store(cache_dir).method(...).
+    """
+    if name in _STORE_METHODS:
+        def _wrapper(cache_dir: Path, *args, **kwargs):
+            return getattr(_store(cache_dir), name)(*args, **kwargs)
+        _wrapper.__name__ = name
+        _wrapper.__qualname__ = name
+        # Cache it on the module to avoid repeated __getattr__ calls.
+        globals()[name] = _wrapper
+        return _wrapper
+    raise AttributeError(f"module 'src.shl.store' has no attribute {name!r}")

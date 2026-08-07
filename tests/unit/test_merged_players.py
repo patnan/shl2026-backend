@@ -107,9 +107,9 @@ class TestMergedPlayerDetail:
         return TestClient(create_app(tmp_path))
 
     def test_returns_merged_data(self, monkeypatch, client, sample_roster, sample_shl_se_player):
-        monkeypatch.setattr("src.shl.rest_api.get_rosters", lambda season_id, cache_dir: sample_roster)
-        monkeypatch.setattr("src.shl.rest_api.get_shl_se_player", lambda season_id, team, jersey, cache_dir: sample_shl_se_player)
-        monkeypatch.setattr("src.shl.rest_api.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
+        monkeypatch.setattr("src.shl.routers.players.get_rosters", lambda season_id, cache_dir: sample_roster)
+        monkeypatch.setattr("src.shl.routers.players.get_shl_se_player", lambda season_id, team, jersey, cache_dir: sample_shl_se_player)
+        monkeypatch.setattr("src.shl.routers.players.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
 
         response = client.get("/seasons/20961/players/Brynäs IF/3")
         assert response.status_code == 200
@@ -133,10 +133,10 @@ class TestMergedPlayerDetail:
         assert data["shl_se_uuid"] == "qQ9-0473YO4F2"
 
     def test_returns_data_without_shl_se(self, monkeypatch, client, sample_roster):
-        monkeypatch.setattr("src.shl.rest_api.get_rosters", lambda season_id, cache_dir: sample_roster)
-        monkeypatch.setattr("src.shl.rest_api.get_shl_se_player", lambda season_id, team, jersey, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_shl_se_player", lambda season_id, team, jersey, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
+        monkeypatch.setattr("src.shl.routers.players.get_rosters", lambda season_id, cache_dir: sample_roster)
+        monkeypatch.setattr("src.shl.routers.players.get_shl_se_player", lambda season_id, team, jersey, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.players.fetch_shl_se_player", lambda season_id, team, jersey, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.players.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
 
         response = client.get("/seasons/20961/players/Brynäs IF/3")
         assert response.status_code == 200
@@ -151,24 +151,24 @@ class TestMergedPlayerDetail:
         assert data["shl_se_uuid"] == ""
 
     def test_404_when_player_not_in_roster(self, monkeypatch, client, sample_roster):
-        monkeypatch.setattr("src.shl.rest_api.get_rosters", lambda season_id, cache_dir: sample_roster)
+        monkeypatch.setattr("src.shl.routers.players.get_rosters", lambda season_id, cache_dir: sample_roster)
 
         response = client.get("/seasons/20961/players/Brynäs IF/99")
         assert response.status_code == 404
 
     def test_lazy_loads_roster(self, monkeypatch, client, sample_roster, sample_shl_se_player):
-        monkeypatch.setattr("src.shl.rest_api.get_rosters", lambda season_id, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_rosters", lambda season_id, cache_dir: sample_roster)
-        monkeypatch.setattr("src.shl.rest_api.get_shl_se_player", lambda season_id, team, jersey, cache_dir: sample_shl_se_player)
-        monkeypatch.setattr("src.shl.rest_api.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
+        monkeypatch.setattr("src.shl.routers.players.get_rosters", lambda season_id, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.players.fetch_rosters", lambda season_id, cache_dir: sample_roster)
+        monkeypatch.setattr("src.shl.routers.players.get_shl_se_player", lambda season_id, team, jersey, cache_dir: sample_shl_se_player)
+        monkeypatch.setattr("src.shl.routers.players.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
 
         response = client.get("/seasons/20961/players/Brynäs IF/3")
         assert response.status_code == 200
         assert response.json()["data"]["name"] == "Djoos, Christian"
 
     def test_502_when_roster_fetch_fails(self, monkeypatch, client):
-        monkeypatch.setattr("src.shl.rest_api.get_rosters", lambda season_id, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_rosters", lambda season_id, cache_dir: (_ for _ in ()).throw(RuntimeError("upstream")))
+        monkeypatch.setattr("src.shl.routers.players.get_rosters", lambda season_id, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.players.fetch_rosters", lambda season_id, cache_dir: (_ for _ in ()).throw(RuntimeError("upstream")))
 
         response = client.get("/seasons/20961/players/Brynäs IF/3")
         assert response.status_code == 502
@@ -183,10 +183,10 @@ class TestMergedTeamPlayers:
         return TestClient(create_app(tmp_path))
 
     def test_returns_all_team_players_merged(self, monkeypatch, client, sample_roster, sample_shl_se_team_players):
-        monkeypatch.setattr("src.shl.rest_api.get_rosters", lambda season_id, cache_dir: sample_roster)
-        monkeypatch.setattr("src.shl.rest_api.get_shl_se_team_players", lambda season_id, team, cache_dir: sample_shl_se_team_players)
-        monkeypatch.setattr("src.shl.rest_api.fetch_shl_se_team_players", lambda season_id, team, cache_dir, force_refresh: sample_shl_se_team_players)
-        monkeypatch.setattr("src.shl.rest_api.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
+        monkeypatch.setattr("src.shl.routers.players.get_rosters", lambda season_id, cache_dir: sample_roster)
+        monkeypatch.setattr("src.shl.routers.players.get_shl_se_team_players", lambda season_id, team, cache_dir: sample_shl_se_team_players)
+        monkeypatch.setattr("src.shl.routers.players.fetch_shl_se_team_players", lambda season_id, team, cache_dir, force_refresh: sample_shl_se_team_players)
+        monkeypatch.setattr("src.shl.routers.players.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
 
         response = client.get("/seasons/20961/players/Brynäs IF")
         assert response.status_code == 200
@@ -207,10 +207,10 @@ class TestMergedTeamPlayers:
         assert p2["portrait_url"] == "/portraits/BIF_10.png"
 
     def test_empty_shl_se_for_team(self, monkeypatch, client, sample_roster):
-        monkeypatch.setattr("src.shl.rest_api.get_rosters", lambda season_id, cache_dir: sample_roster)
-        monkeypatch.setattr("src.shl.rest_api.get_shl_se_team_players", lambda season_id, team, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_shl_se_team_players", lambda season_id, team, cache_dir, force_refresh: [])
-        monkeypatch.setattr("src.shl.rest_api.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
+        monkeypatch.setattr("src.shl.routers.players.get_rosters", lambda season_id, cache_dir: sample_roster)
+        monkeypatch.setattr("src.shl.routers.players.get_shl_se_team_players", lambda season_id, team, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.players.fetch_shl_se_team_players", lambda season_id, team, cache_dir, force_refresh: [])
+        monkeypatch.setattr("src.shl.routers.players.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
 
         response = client.get("/seasons/20961/players/Brynäs IF")
         assert response.status_code == 200
@@ -221,16 +221,16 @@ class TestMergedTeamPlayers:
         assert payload["data"][0]["name"] == "Djoos, Christian"
 
     def test_404_when_team_not_in_roster(self, monkeypatch, client, sample_roster):
-        monkeypatch.setattr("src.shl.rest_api.get_rosters", lambda season_id, cache_dir: sample_roster)
+        monkeypatch.setattr("src.shl.routers.players.get_rosters", lambda season_id, cache_dir: sample_roster)
 
         response = client.get("/seasons/20961/players/NonExistent Team")
         assert response.status_code == 404
 
     def test_lazy_loads_roster_for_team(self, monkeypatch, client, sample_roster, sample_shl_se_team_players):
-        monkeypatch.setattr("src.shl.rest_api.get_rosters", lambda season_id, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_rosters", lambda season_id, cache_dir: sample_roster)
-        monkeypatch.setattr("src.shl.rest_api.get_shl_se_team_players", lambda season_id, team, cache_dir: sample_shl_se_team_players)
-        monkeypatch.setattr("src.shl.rest_api.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
+        monkeypatch.setattr("src.shl.routers.players.get_rosters", lambda season_id, cache_dir: None)
+        monkeypatch.setattr("src.shl.routers.players.fetch_rosters", lambda season_id, cache_dir: sample_roster)
+        monkeypatch.setattr("src.shl.routers.players.get_shl_se_team_players", lambda season_id, team, cache_dir: sample_shl_se_team_players)
+        monkeypatch.setattr("src.shl.routers.players.get_rosters_fetched_at", lambda cache_dir, season_id: "2026-08-06T10:00:00")
 
         response = client.get("/seasons/20961/players/Brynäs IF")
         assert response.status_code == 200

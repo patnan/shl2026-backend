@@ -18,9 +18,9 @@ Identified 2026-08-07. Sorted by category.
 
 ## Code Quality / Maintainability
 
-- [ ] **Split store.py (918 lines)** — Handles games, schedule, standings, stats, rosters, live games, devices, poll targets, domain events. Split into domain-specific modules or at least separate module-level wrappers.
-- [ ] **Eliminate module-level wrappers** — ~90 one-liner wrappers that just call `_store(cache_dir).method()`. Use `__getattr__` proxy or import `Store` directly in callers.
-- [ ] **Split rest_api.py (613 lines)** — All endpoints in one `create_app()`. Use FastAPI routers to split by domain (games, standings, players, devices).
+- [x] **Split store.py (918 lines)** — Handles games, schedule, standings, stats, rosters, live games, devices, poll targets, domain events. Split into domain-specific modules or at least separate module-level wrappers.
+- [x] **Eliminate module-level wrappers** — ~90 one-liner wrappers that just call `_store(cache_dir).method()`. Use `__getattr__` proxy or import `Store` directly in callers.
+- [x] **Split rest_api.py (613 lines)** — All endpoints in one `create_app()`. Use FastAPI routers to split by domain (games, standings, players, devices).
 - [ ] **Pydantic response models** — Endpoints return `Dict[str, Any]`. Response models give validation, better /docs, and alignment with openapi.yaml.
 
 ## Testing
