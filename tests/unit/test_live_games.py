@@ -31,10 +31,19 @@ LIVE_PAGE_HTML = """
         <div class="tdOdd row p-1 TodaysGamesGame">
           <div class="col-5 p-1 text-right"><div class="h2 font-weight-bold">Rögle BK</div></div>
           <div class="col-2 p-1 text-center Result">
-            <div class="col-12 p-0 m-0 text-center">16:00</div>
-            <div class="col-12 p-0 m-0 text-center">Catena Arena</div>
+            <div class="col-12 p-0 m-0 text-center"><a class="m-0 p-0" href="
+      javascript:openonlinewindow('/Game/Events/1113947','')
+    ">2 - 1</a></div>
+            <div class="col-12 p-0 m-0 text-center">
+                  (1-1, 1-0)
+                </div>
           </div>
           <div class="col-5 p-1 text-left"><div class="h2 font-weight-bold">IF Malmö Redhawks</div></div>
+        </div>
+        <div class="tdOdd row pt-0 mt-0 TodaysGamesGame">
+          <div class="col-12 m-0 text-center">2nd period
+                     (15:30)
+                  </div>
         </div>
       </div>
     </div>
@@ -42,8 +51,12 @@ LIVE_PAGE_HTML = """
       <div class="col-12 p-0"><div class="row p-0"><div class="col-5"><div class="row">
         <div class="col-4 text-right"><div class="h2 font-weight-bold">Rögle BK</div></div>
         <div class="col-4 text-center Result">
-          <div class="col-12 p-0 m-0 text-center">16:00</div>
-          <div class="col-12 p-0 m-0 text-center">Catena Arena</div>
+          <div class="col-12 p-0 m-0 text-center"><a class="m-0 p-0" href="
+      javascript:openonlinewindow('/Game/Events/1113947','')
+    ">2 - 1</a></div>
+          <div class="col-12 p-0 m-0 text-center">
+                      (1-1, 1-0)
+                    </div>
         </div>
         <div class="col-4"><div class="h2 font-weight-bold">IF Malmö Redhawks</div></div>
       </div></div></div></div>
@@ -58,6 +71,9 @@ LIVE_PAGE_HTML = """
           </div>
           <div class="col-5 p-1 text-left"><div class="h2 font-weight-bold">Djurgårdens IF</div></div>
         </div>
+        <div class="tdNormal row pt-0 mt-0 TodaysGamesGame">
+          <div class="col-12 m-0 text-center"></div>
+        </div>
       </div>
     </div>
     <div class="tdNormal p-1 row d-none d-sm-flex">
@@ -69,6 +85,22 @@ LIVE_PAGE_HTML = """
         </div>
         <div class="col-4"><div class="h2 font-weight-bold">Djurgårdens IF</div></div>
       </div></div></div></div>
+    </div>
+    <div class="row d-flex d-sm-none">
+      <div class="col-12">
+        <div class="tdOdd row p-1 TodaysGamesGame">
+          <div class="col-5 p-1 text-right"><div class="h2 font-weight-bold">Linköping HC</div></div>
+          <div class="col-2 p-1 text-center Result">
+            <div class="col-12 p-0 m-0 text-center"><a class="m-0 p-0" href="
+      javascript:openonlinewindow('/Game/Events/1113768','')
+    ">18:00</a></div>
+          </div>
+          <div class="col-5 p-1 text-left"><div class="h2 font-weight-bold">HV 71</div></div>
+        </div>
+        <div class="tdOdd row pt-0 mt-0 TodaysGamesGame">
+          <div class="col-12 m-0 text-center">Waiting for 1st period</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -94,28 +126,28 @@ LIVE_PAGE_EMPTY_HTML = """
 
 
 class TestParseLiveGamesHtml:
-    def test_parses_two_games_from_duplicate_responsive_html(self):
+    def test_parses_three_games_from_duplicate_responsive_html(self):
         entries = parse_live_games_html(LIVE_PAGE_HTML)
-        assert len(entries) == 2
+        assert len(entries) == 3
 
     def test_extracts_home_team(self):
         entries = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].home_team == "Rögle BK"
         assert entries[1].home_team == "Leksands IF"
+        assert entries[2].home_team == "Linköping HC"
 
     def test_extracts_away_team(self):
         entries = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].away_team == "IF Malmö Redhawks"
         assert entries[1].away_team == "Djurgårdens IF"
+        assert entries[2].away_team == "HV 71"
 
-    def test_extracts_time(self):
+    def test_extracts_time_for_upcoming(self):
         entries = parse_live_games_html(LIVE_PAGE_HTML)
-        assert entries[0].time == "16:00"
         assert entries[1].time == "17:00"
 
-    def test_extracts_venue(self):
+    def test_extracts_venue_for_upcoming(self):
         entries = parse_live_games_html(LIVE_PAGE_HTML)
-        assert entries[0].venue == "Catena Arena"
         assert entries[1].venue == "Clas Ohlson Foundation Arena"
 
     def test_date_is_today(self):
@@ -126,8 +158,39 @@ class TestParseLiveGamesHtml:
 
     def test_game_result_empty_for_upcoming(self):
         entries = parse_live_games_html(LIVE_PAGE_HTML)
-        assert entries[0].game_result == ""
         assert entries[1].game_result == ""
+
+    def test_extracts_score_for_in_progress_game(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[0].game_result == "2 - 1"
+
+    def test_extracts_periods_for_in_progress_game(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[0].periods == "(1-1, 1-0)"
+
+    def test_extracts_game_url_from_score_link(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[0].game_url == "https://stats.swehockey.se/Game/Events/1113947"
+
+    def test_extracts_game_url_for_waiting_game(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[2].game_url == "https://stats.swehockey.se/Game/Events/1113768"
+
+    def test_no_game_url_for_upcoming_without_link(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[1].game_url == ""
+
+    def test_extracts_status_for_in_progress_game(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[0].status == "2nd period (15:30)"
+
+    def test_extracts_status_for_waiting_game(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[2].status == "Waiting for 1st period"
+
+    def test_status_empty_for_upcoming_game(self):
+        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        assert entries[1].status == ""
 
     def test_empty_page_returns_empty_list(self):
         entries = parse_live_games_html(LIVE_PAGE_EMPTY_HTML)

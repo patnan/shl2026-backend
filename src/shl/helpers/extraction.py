@@ -460,13 +460,18 @@ def parse_live_games_html(html: str) -> List[ScheduleEntry]:
     once for mobile (d-flex d-sm-none) and once for desktop (d-none d-sm-flex).
     We parse the mobile view (simpler structure) using TodaysGamesGame class.
 
-    Each game row has:
-    - col-5 text-right: home team name
-    - col-2 Result: time + venue
-    - col-5 text-left: away team name
+    Each game block consists of multiple TodaysGamesGame rows:
+    - First row: col-5 (home) + col-2 Result (score/time + venue) + col-5 (away)
+    - Second row: col-12 with game status text (e.g. "1st period (19:20)")
 
-    When a game is in progress, the Result div may contain a score instead of
-    (or in addition to) the time.
+    Data extracted per game:
+    - Home/away team names
+    - Game result (score) if in progress or finished
+    - Periods breakdown (e.g. "(1-1, 0-0)")
+    - Game URL from the score link (javascript:openonlinewindow('/Game/Events/ID',''))
+    - Venue (shown for upcoming games in the Result column)
+    - Status text (e.g. "1st period (19:20)", "Waiting for 1st period")
+    - Start time for upcoming games
 
     Args:
         html: Raw HTML string from the Live page.
@@ -480,19 +485,20 @@ def parse_live_games_html(html: str) -> List[ScheduleEntry]:
 
     today_str = date.today().isoformat()
 
-    # Find the mobile-view game divs (class contains TodaysGamesGame and
-    # they are inside d-flex d-sm-none containers).
-    # We look for all divs with class TodaysGamesGame that have col-5 children.
-    game_divs = soup.find_all("div", class_="TodaysGamesGame")
+    # Find the mobile-view game containers (inside d-flex d-sm-none).
+    mobile_containers = soup.find_all("div", class_=re.compile(r"\bd-flex\b.*\bd-sm-none\b"))
 
-    for game_div in game_divs:
-        # Only process divs that have the team name structure (col-5 + col-2 + col-5).
-        cols = game_div.find_all("div", recursive=False)
-        if len(cols) < 3:
+    for container in mobile_containers:
+        game_divs = container.find_all("div", class_="TodaysGamesGame")
+        if not game_divs:
             continue
 
+        # First TodaysGamesGame div has the teams and score/time.
+        # Second TodaysGamesGame div (if present) has the status text.
+        main_div = game_divs[0]
+
         # Find home team (col-5 text-right)
-        home_col = game_div.find("div", class_=re.compile(r"col-5.*text-right"))
+        home_col = main_div.find("div", class_=re.compile(r"col-5.*text-right"))
         if not home_col:
             continue
         home_team = home_col.get_text(strip=True)
@@ -500,37 +506,67 @@ def parse_live_games_html(html: str) -> List[ScheduleEntry]:
             continue
 
         # Find away team (col-5 text-left)
-        away_col = game_div.find("div", class_=re.compile(r"col-5.*text-left"))
+        away_col = main_div.find("div", class_=re.compile(r"col-5.*text-left"))
         if not away_col:
             continue
         away_team = away_col.get_text(strip=True)
         if not away_team:
             continue
 
-        # Deduplication key (since game appears in both mobile and desktop views)
+        # Deduplication key
         key = (home_team, away_team)
         if key in seen:
             continue
         seen.add(key)
 
         # Find result/time column (col-2 with class Result)
-        result_col = game_div.find("div", class_=re.compile(r"Result"))
+        result_col = main_div.find("div", class_=re.compile(r"Result"))
         game_time = ""
         venue = ""
         game_result = ""
+        periods = ""
+        game_url = ""
 
         if result_col:
-            # The Result div contains sub-divs: first is time/score, second is venue.
+            # Extract game URL from score link (javascript:openonlinewindow('/Game/Events/ID',''))
+            score_link = result_col.find("a", href=re.compile(r"openonlinewindow"))
+            if score_link:
+                href = score_link.get("href", "")
+                url_match = re.search(r"/Game/Events/(\d+)", href)
+                if url_match:
+                    game_url = f"https://stats.swehockey.se/Game/Events/{url_match.group(1)}"
+
+            # The Result div contains sub-divs: score/time, periods, venue.
             sub_divs = result_col.find_all("div", recursive=False)
-            if len(sub_divs) >= 1:
-                first_text = sub_divs[0].get_text(strip=True)
-                # Check if it's a time (HH:MM) or a score (N - N)
-                if re.match(r"^\d{1,2}:\d{2}$", first_text):
-                    game_time = first_text
-                elif re.search(r"\d+\s*-\s*\d+", first_text):
-                    game_result = first_text
-            if len(sub_divs) >= 2:
-                venue = sub_divs[1].get_text(strip=True)
+            for sub_div in sub_divs:
+                text = sub_div.get_text(strip=True)
+                if not text:
+                    continue
+                # Check if it's a time (HH:MM)
+                if re.match(r"^\d{1,2}:\d{2}$", text):
+                    game_time = text
+                # Check if it's a score (N - N)
+                elif re.search(r"^\d+\s*-\s*\d+$", text):
+                    game_result = text
+                # Check if it's period scores like (1-0, 2-1, 0-0) or (1-1)
+                elif re.match(r"^\([\d\s,\-]+\)$", text):
+                    periods = text
+                # Otherwise it's likely a venue name
+                elif not re.match(r"^\d", text):
+                    venue = text
+
+            # If the score link text contains a time instead of score
+            if score_link and not game_result:
+                link_text = score_link.get_text(strip=True)
+                if re.match(r"^\d{1,2}:\d{2}$", link_text):
+                    game_time = link_text
+
+        # Extract status from the second TodaysGamesGame row
+        status = ""
+        if len(game_divs) >= 2:
+            status_div = game_divs[1].find("div", class_=re.compile(r"col-12"))
+            if status_div:
+                status = re.sub(r"\s+", " ", status_div.get_text(strip=True)).strip()
 
         entries.append(ScheduleEntry(
             date=today_str,
@@ -538,12 +574,12 @@ def parse_live_games_html(html: str) -> List[ScheduleEntry]:
             home_team=home_team,
             away_team=away_team,
             game_result=game_result,
-            periods="",
+            periods=periods,
             spectators="",
             venue=venue,
-            game_url="",
+            game_url=game_url,
             round="",
-            status="",
+            status=status,
         ))
 
     return entries
