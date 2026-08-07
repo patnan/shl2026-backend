@@ -46,7 +46,6 @@ DEFAULT_SUCCESS_INTERVAL_SECONDS = {
     "team_info": 24 * 60 * 60,     # Every 24 hours.
 }
 
-# Schedule is fetched at fixed daily times (06:00, 14:00, 18:00).
 # Schedule is fetched at fixed daily times.
 SCHEDULE_FETCH_TIMES = [(6, 0), (14, 0), (18, 0), (22, 30)]
 
@@ -88,7 +87,7 @@ def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optio
     elif target_type == "live_games" and cache_dir is not None and target_key is not None:
         interval = _compute_live_games_interval(cache_dir, int(target_key), now)
         # If the response was already aged, we can poll sooner since SweHockey
-        # will have fresh data sooner (max_age=40 - age = remaining TTL).
+        # will have fresh data sooner (max_age=20 - age = remaining TTL).
         age = _last_live_age.get(target_key)
         if age is not None and interval == LIVE_GAMES_INTERVAL_ACTIVE:
             # Remaining cache TTL on SweHockey's side = max_age - age.
@@ -97,6 +96,12 @@ def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optio
             remaining_ttl = max(0, SWEHOCKEY_MAX_AGE - age)
             # Poll after the remaining TTL + a small buffer.
             interval = max(remaining_ttl + 3, 10)  # At least 10s, at most ~23s.
+    elif target_type in ("player_stats", "goalie_stats") and cache_dir is not None and target_key is not None:
+        # Defer stats polling while games are in progress (stats don't update mid-game).
+        interval = DEFAULT_SUCCESS_INTERVAL_SECONDS.get(target_type, 2 * 60 * 60)
+        if _are_games_in_progress(cache_dir, int(target_key), now):
+            # Defer until 30 min after last game is expected to end.
+            interval = max(interval, _seconds_until_games_finish(cache_dir, int(target_key), now))
     else:
         interval = DEFAULT_SUCCESS_INTERVAL_SECONDS.get(target_type, 60)
     return _to_iso(now + timedelta(seconds=interval))
@@ -106,12 +111,19 @@ def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -
     """Determine schedule polling interval based on fixed daily times.
 
     Schedule is fetched at startup, then next at the nearest of 06:00, 14:00, 18:00, 22:30.
+    On active game days (games currently in progress), the 14:00 and 18:00 fetches are
+    skipped since live scores come from the StatPage partial — only 22:30 captures finals.
     Returns seconds until the next scheduled fetch time.
     """
+    games_active = _are_games_in_progress(cache_dir, season_id, now)
+
     # Find the next fetch time today or tomorrow.
     for hour, minute in SCHEDULE_FETCH_TIMES:
         next_time = datetime(now.year, now.month, now.day, hour, minute, 0, tzinfo=now.tzinfo)
         if next_time > now:
+            # Skip mid-day fetches if games are active (live poller handles scores).
+            if games_active and (hour, minute) in ((14, 0), (18, 0)):
+                continue
             return int((next_time - now).total_seconds())
 
     # All today's times have passed — next is first time tomorrow.
@@ -119,6 +131,56 @@ def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -
     first_hour, first_minute = SCHEDULE_FETCH_TIMES[0]
     next_time = datetime(tomorrow.year, tomorrow.month, tomorrow.day, first_hour, first_minute, 0, tzinfo=now.tzinfo)
     return int((next_time - now).total_seconds())
+
+def _are_games_in_progress(cache_dir: Path, season_id: int, now: datetime) -> bool:
+    """Check if any games are currently in progress (active window, not all finished)."""
+    live_games = load_live_games(cache_dir, season_id)
+    if not live_games:
+        return False
+    for g in live_games:
+        if g.game_result and g.status.lower() not in ("game finished", "final score"):
+            return True
+    # Also check if we're in the game window (games scheduled but not yet started)
+    schedule = load_schedule(cache_dir, season_id)
+    if not schedule:
+        return False
+    today_str = now.date().isoformat()
+    todays_games = [e for e in schedule if e.date == today_str]
+    if not todays_games:
+        return False
+    # Any game without a final result?
+    for g in live_games:
+        if not g.game_result or g.status.lower() not in ("game finished", "final score"):
+            return True
+    return False
+
+
+def _seconds_until_games_finish(cache_dir: Path, season_id: int, now: datetime) -> int:
+    """Estimate seconds until all today's games are finished (~3h after last start + 30min buffer)."""
+    schedule = load_schedule(cache_dir, season_id)
+    if not schedule:
+        return 30 * 60  # Fallback: 30 min
+
+    today_str = now.date().isoformat()
+    start_times: List[datetime] = []
+    for entry in schedule:
+        if entry.date == today_str and entry.time:
+            try:
+                hour, minute = entry.time.split(":")[:2]
+                game_start = datetime(now.year, now.month, now.day, int(hour), int(minute), tzinfo=now.tzinfo)
+                start_times.append(game_start)
+            except (ValueError, IndexError):
+                pass
+
+    if not start_times:
+        return 30 * 60
+
+    last_start = max(start_times)
+    # Games typically last ~2.5h; add 30min buffer for OT/SO.
+    estimated_end = last_start + timedelta(hours=3)
+    remaining = int((estimated_end - now).total_seconds())
+    return max(remaining, 30 * 60)  # At least 30 min
+
 
 # Live games polling intervals.
 LIVE_GAMES_INTERVAL_ACTIVE = 25             # Within game window: every 25s (StatPage caches for 20s).

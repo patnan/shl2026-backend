@@ -14,6 +14,10 @@ from src.shl.models import Game, ScheduleEntry
 from .parsing import parse_actions, parse_top_stats
 
 
+# Module-level session for connection pooling (reuses TCP+TLS connections).
+_session = requests.Session()
+
+
 class GameScrapeError(RuntimeError):
     pass
 
@@ -70,7 +74,7 @@ def fetch_html(url: str, timeout: int = 20) -> str:
         for candidate_index, candidate_url in enumerate(candidate_urls):
             for attempt in range(1, 4):
                 try:
-                    response = requests.get(candidate_url, timeout=timeout)
+                    response = _session.get(candidate_url, timeout=timeout)
                     response.raise_for_status()
                     response.encoding = "utf-8"
                     return response.text
@@ -106,7 +110,7 @@ def fetch_html_with_headers(url: str, timeout: int = 20) -> Tuple[str, Dict[str,
     try:
         for attempt in range(1, 4):
             try:
-                response = requests.get(url, timeout=timeout)
+                response = _session.get(url, timeout=timeout)
                 response.raise_for_status()
                 response.encoding = "utf-8"
                 return response.text, dict(response.headers)
