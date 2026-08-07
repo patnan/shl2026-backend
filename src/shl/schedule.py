@@ -1,3 +1,4 @@
+import hashlib
 import re
 from datetime import date, timezone
 from pathlib import Path
@@ -6,6 +7,8 @@ from typing import Dict, List, Optional, Tuple
 from src.shl.helpers.extraction import (
     extract_live_games,
     extract_schedule_games,
+    extract_schedule_games_from_listing_html,
+    fetch_html,
 )
 from src.shl.models import ScheduleEntry, StandingsRow
 from src.shl.store import load_live_games, load_schedule, load_standings, save_live_games, save_schedule
@@ -27,11 +30,16 @@ class FetchLiveGamesError(RuntimeError):
     pass
 
 
+# In-process cache of last schedule content hash per season (avoids re-parse if unchanged).
+_schedule_content_hash: Dict[int, str] = {}
+
+
 def fetch_schedule(season_id: int, db_dir: Path, force_reparse: bool = False) -> List[ScheduleEntry]:
     """Fetch the season schedule, using cached data if available.
 
     Scrapes the SweHockey schedule page on cache miss or when force_reparse is True,
-    and persists the result to the database.
+    and persists the result to the database. Skips parsing and DB write if the page
+    content hasn't changed since the last fetch (hash comparison).
 
     Args:
         season_id: SweHockey season/tournament ID.
@@ -51,8 +59,18 @@ def fetch_schedule(season_id: int, db_dir: Path, force_reparse: bool = False) ->
                 return cached
 
         url = f"https://stats.swehockey.se/ScheduleAndResults/Schedule/{season_id}"
-        schedule, page_last_update = extract_schedule_games(url)
+        html = fetch_html(url)
+
+        # Skip expensive parse + DB write if content unchanged.
+        content_hash = hashlib.sha256(html.encode()).hexdigest()
+        if content_hash == _schedule_content_hash.get(season_id):
+            cached = load_schedule(db_dir, season_id)
+            if cached is not None:
+                return cached
+
+        schedule, page_last_update = extract_schedule_games_from_listing_html(html, base_url=url)
         save_schedule(db_dir, season_id, schedule, page_last_update)
+        _schedule_content_hash[season_id] = content_hash
         return schedule
     except Exception as exc:
         raise FetchScheduleError(f"fetch_schedule failed for season '{season_id}': {exc}") from exc
