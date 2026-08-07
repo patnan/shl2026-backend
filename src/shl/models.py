@@ -307,21 +307,23 @@ class ScheduleEntry:
                 return "not_started"
 
         # Intermission: waiting for 2nd/3rd/OT period, or period ended
-        if re.match(r"waiting for (2nd|3rd|ot|overtime)", status_lower):
+        if re.match(r"waiting for (2nd|3rd|4th|5th|ot|overtime|shootout)", status_lower):
             return "intermission"
         if re.search(r"period ended", status_lower):
             return "intermission"
-        # Waiting for OT-related periods
-        if re.match(r"waiting for (4th|5th|overtime|shootout)", status_lower):
-            return "intermission"
 
-        # Active play with a clock running
+        # Active play with a clock running (clock always present during play).
+        # Status may be "2nd period (01:49)" or "Powerplay (5 on 4) for LHC (13:14)"
         if self.game_result and self.game_clock:
-            # Determine period from current_period or period count
+            # Determine period from current_period if available.
             period_num = 0
             period_match = re.search(r"(\d+)", self.current_period)
             if period_match:
                 period_num = int(period_match.group(1))
+            else:
+                # Fallback: count period scores in the periods string.
+                # During active play, period scores reflect the current period.
+                period_num = len(re.findall(r"\d+-\d+", self.periods)) if self.periods else 0
 
             if period_num >= 5:
                 return "shootout"

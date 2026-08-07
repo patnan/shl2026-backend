@@ -85,6 +85,18 @@ class TestGameState:
                    periods="(1-1, 1-1, 0-0, 0-0)")
         assert e.game_state == "shootout"
 
+    def test_overtime_powerplay_no_current_period(self):
+        """Powerplay in OT: no 'Nth period' in status, uses periods count as fallback."""
+        e = _entry(game_result="2 - 2", status="Powerplay (5 on 4) for LHC (03:00)",
+                   game_clock="03:00", current_period="",
+                   periods="(1-1, 1-1, 0-0, 0-0)")
+        assert e.game_state == "overtime"
+
+    def test_intermission_waiting_for_overtime(self):
+        e = _entry(game_result="2 - 2", status="Waiting for Overtime",
+                   periods="(1-1, 1-1, 0-0)")
+        assert e.game_state == "intermission"
+
     def test_to_dict_includes_game_state(self):
         e = _entry(game_result="1 - 0", status="2nd period (10:00)",
                    game_clock="10:00", current_period="2nd period")
