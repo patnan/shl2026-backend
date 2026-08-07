@@ -66,7 +66,7 @@ Method used:
 
 ### 2) Game Targets
 
-Game targets exist in the database but are **not actively polled**. They serve as on-demand fetch targets for the API's game detail endpoint.
+Game targets exist in the database but are **not actively polled**. The `GET /games/{game_id}` endpoint always fetches fresh data from SweHockey on each request, ensuring live game details are current. The result is persisted as a side effect (used by standings calculation).
 
 ### 3) Standings
 
@@ -109,7 +109,7 @@ The SweHockey Live page at `/ScheduleAndResults/Live/{season_id}` lists today's 
 
 The poller keeps the live games cache fresh every 30 seconds. If the cache is empty (first request before poller has run), the API endpoint fetches on demand and caches the result.
 
-Current implementation handles upcoming games (time + venue). When games are in progress, the same Result column will show the live score — the parser is designed to detect this and populate `game_result` accordingly. Further evolution (period info, game status, linking to game detail pages) will be added as the 2026-27 season progresses and we observe live HTML structure during actual games.
+The live games parser extracts: home/away teams, score, period scores, game_url (from score link), venue, start time, game status (e.g. "2nd period"), game clock (e.g. "01:49"), and current period. The game page parser also works during live games (no longer requires "Final Score" in the HTML).
 
 ## DB Design
 
