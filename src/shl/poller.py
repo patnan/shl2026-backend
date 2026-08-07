@@ -44,10 +44,8 @@ DEFAULT_SUCCESS_INTERVAL_SECONDS = {
     "team_info": 24 * 60 * 60,     # Every 24 hours.
 }
 
-# Dynamic schedule intervals based on game activity.
-SCHEDULE_INTERVAL_LIVE_GAMES = 30          # Within active game window.
-SCHEDULE_INTERVAL_GAME_DAY = 15 * 60      # Games today but outside active window.
-SCHEDULE_INTERVAL_NO_GAMES = 2 * 60 * 60  # No games today at all.
+# Schedule is fetched at fixed daily times (06:00, 14:00, 18:00).
+SCHEDULE_FETCH_HOURS = [6, 14, 18]
 
 DEFAULT_ERROR_BASE_INTERVAL_SECONDS = {
     "game": 30,
@@ -89,53 +87,21 @@ def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optio
 
 
 def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -> int:
-    """Determine schedule polling interval based on current game activity.
+    """Determine schedule polling interval based on fixed daily times.
 
-    - No games today: every 2 hours.
-    - Games today but outside active window: every 15 minutes.
-    - Within active window (5 min before first game to 4h after last game starts): every 30 seconds.
+    Schedule is fetched at startup, then next at the nearest of 06:00, 14:00, 18:00.
+    Returns seconds until the next scheduled fetch time.
     """
-    schedule = load_schedule(cache_dir, season_id)
-    if not schedule:
-        return SCHEDULE_INTERVAL_NO_GAMES
+    # Find the next fetch time today or tomorrow.
+    for hour in SCHEDULE_FETCH_HOURS:
+        next_time = datetime(now.year, now.month, now.day, hour, 0, 0, tzinfo=now.tzinfo)
+        if next_time > now:
+            return int((next_time - now).total_seconds())
 
-    today_str = now.date().isoformat()
-    todays_games = [e for e in schedule if e.date == today_str]
-
-    if not todays_games:
-        return SCHEDULE_INTERVAL_NO_GAMES
-
-    # Parse start times for today's games.
-    start_times: List[datetime] = []
-    for entry in todays_games:
-        if entry.time:
-            try:
-                hour, minute = entry.time.split(":")[:2]
-                game_start = datetime(
-                    now.year, now.month, now.day,
-                    int(hour), int(minute), tzinfo=now.tzinfo,
-                )
-                start_times.append(game_start)
-            except (ValueError, IndexError):
-                pass
-
-    if not start_times:
-        # Games today but no parseable times — use game day interval.
-        return SCHEDULE_INTERVAL_GAME_DAY
-
-    first_start = min(start_times)
-    last_start = max(start_times)
-
-    # Active window: 5 min before first game to 4h after last game starts.
-    window_begin = first_start - timedelta(minutes=5)
-    window_end = last_start + timedelta(hours=4)
-
-    if window_begin <= now <= window_end:
-        return SCHEDULE_INTERVAL_LIVE_GAMES
-
-    # Games today but outside active window.
-    return SCHEDULE_INTERVAL_GAME_DAY
-
+    # All today's times have passed — next is 06:00 tomorrow.
+    tomorrow = now + timedelta(days=1)
+    next_time = datetime(tomorrow.year, tomorrow.month, tomorrow.day, SCHEDULE_FETCH_HOURS[0], 0, 0, tzinfo=now.tzinfo)
+    return int((next_time - now).total_seconds())
 
 # Live games polling intervals.
 LIVE_GAMES_INTERVAL_ACTIVE = 30             # Within game window: every 30 seconds.
