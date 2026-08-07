@@ -133,6 +133,19 @@ class Store:
         # Initialize schema once on the creating thread's connection.
         conn = self._get_conn()
         conn.executescript(_SCHEMA_SQL)
+        self._run_migrations(conn)
+
+    def _run_migrations(self, conn: sqlite3.Connection) -> None:
+        """Add missing columns to existing tables (idempotent)."""
+        migrations = [
+            ("poll_targets", "one_shot", "INTEGER NOT NULL DEFAULT 0"),
+        ]
+        for table, column, col_def in migrations:
+            cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            if column not in cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+                _logger.info("Migrated: added %s.%s", table, column)
+        conn.commit()
 
     def _get_conn(self) -> sqlite3.Connection:
         """Return a per-thread connection (created lazily)."""
