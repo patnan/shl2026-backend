@@ -84,14 +84,18 @@ def get_games_for_date(season_id: int, game_date: str, db_dir: Path) -> List[Sch
 
 
 def get_all_played_games(season_id: int, db_dir: Path) -> List[ScheduleEntry]:
-    """Return all schedule entries that have a recorded result.
+    """Return all schedule entries that have a recorded result, up to and including yesterday.
+
+    Only games with a date before today are included in standings calculation.
+    Today's games (even if they have a result) are excluded to keep standings
+    stable during game days.
 
     Args:
         season_id: SweHockey season/tournament ID.
         db_dir: Path to the cache/database directory.
 
     Returns:
-        List of ScheduleEntry dataclasses with non-empty game_result.
+        List of ScheduleEntry dataclasses with non-empty game_result and date < today.
 
     Raises:
         GetAllPlayedGamesError: If loading fails.
@@ -100,7 +104,8 @@ def get_all_played_games(season_id: int, db_dir: Path) -> List[ScheduleEntry]:
         schedule = load_schedule(db_dir, season_id)
         if schedule is None:
             return []
-        return [entry for entry in schedule if entry.game_result]
+        today_str = date.today().isoformat()
+        return [entry for entry in schedule if entry.game_result and entry.date < today_str]
     except Exception as exc:
         raise GetAllPlayedGamesError(f"get_all_played_games failed for season '{season_id}': {exc}") from exc
 
