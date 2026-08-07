@@ -9,6 +9,23 @@ from src.shl.models import Game, ScheduleEntry, StandingsRow
 from src.shl.rest_api import create_app
 
 
+def test_root_endpoint_lists_endpoints(tmp_path):
+    client = TestClient(create_app(tmp_path))
+
+    response = client.get("/")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "SHL Data API"
+    assert body["version"] == "0.1.0"
+    assert isinstance(body["endpoints"], list)
+    assert len(body["endpoints"]) > 0
+    # Each entry has path, method, description
+    for ep in body["endpoints"]:
+        assert "path" in ep
+        assert "method" in ep
+        assert "description" in ep
+
+
 def test_health_endpoint(tmp_path):
     client = TestClient(create_app(tmp_path))
 

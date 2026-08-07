@@ -213,19 +213,20 @@ For each due poll target:
 REST API reads from DB only. No live scrape in request path.
 
 Endpoints:
-1. GET /health
-2. GET /seasons/{season_id}/schedule
-3. GET /seasons/{season_id}/games?date=YYYY-MM-DD
-4. GET /seasons/{season_id}/games/played
-5. GET /seasons/{season_id}/games/today
-6. GET /seasons/{season_id}/standings
-7. GET /seasons/{season_id}/rounds
-8. GET /seasons/{season_id}/rounds/played
-9. GET /seasons/{season_id}/rounds/next
-10. GET /seasons/{season_id}/teams
-11. GET /games/{game_id}
-12. POST /devices
-13. DELETE /devices
+1. GET / (endpoint index with descriptions)
+2. GET /health
+3. GET /seasons/{season_id}/schedule
+4. GET /seasons/{season_id}/games?date=YYYY-MM-DD
+5. GET /seasons/{season_id}/games/played
+6. GET /seasons/{season_id}/games/today
+7. GET /seasons/{season_id}/standings
+8. GET /seasons/{season_id}/rounds
+9. GET /seasons/{season_id}/rounds/played
+10. GET /seasons/{season_id}/rounds/next
+11. GET /seasons/{season_id}/teams
+12. GET /games/{game_id}
+13. POST /devices
+14. DELETE /devices
 
 Response metadata:
 1. fetched_at

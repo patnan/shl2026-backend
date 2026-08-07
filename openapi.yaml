@@ -13,6 +13,48 @@ servers:
     description: Local development
 
 paths:
+  /:
+    get:
+      operationId: root
+      summary: List available API endpoints
+      description: Returns all available endpoints with their HTTP methods and descriptions.
+      responses:
+        "200":
+          description: Endpoint index
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: SHL Data API
+                  version:
+                    type: string
+                    example: "0.1.0"
+                  endpoints:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        path:
+                          type: string
+                          example: /seasons/{season_id}/standings
+                        method:
+                          type: string
+                          example: GET
+                        description:
+                          type: string
+                          example: Current standings computed from played games
+                      required:
+                        - path
+                        - method
+                        - description
+                required:
+                  - name
+                  - version
+                  - endpoints
+
   /health:
     get:
       operationId: health
