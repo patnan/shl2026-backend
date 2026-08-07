@@ -506,3 +506,135 @@ def test_live_games_poller_skips_diffing_when_page_unchanged(monkeypatch, tmp_pa
     events = list_unprocessed_domain_events(tmp_path)
     state_events = [e for e in events if e.event_type == "game_state_changed"]
     assert len(state_events) == 0
+
+
+def test_parallel_execution_multiple_targets(monkeypatch, tmp_path):
+    """Multiple due targets run in parallel and all produce results."""
+    import threading
+    from src.shl.poller import POLLER_MAX_WORKERS
+
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    # Seed 3 due targets of different types.
+    upsert_poll_target(tmp_path, target_type="standings", target_key="18263",
+                       enabled=True, next_poll_at=_iso(now - timedelta(seconds=1)))
+    upsert_poll_target(tmp_path, target_type="player_stats", target_key="18263",
+                       enabled=True, next_poll_at=_iso(now - timedelta(seconds=1)))
+    upsert_poll_target(tmp_path, target_type="goalie_stats", target_key="18263",
+                       enabled=True, next_poll_at=_iso(now - timedelta(seconds=1)))
+
+    thread_ids = []
+    lock = threading.Lock()
+
+    def fake_fetch_table(season_id, db_dir):
+        with lock:
+            thread_ids.append(threading.current_thread().ident)
+
+    def fake_fetch_player_stats(season_id, db_dir, force_reparse=False):
+        with lock:
+            thread_ids.append(threading.current_thread().ident)
+
+    def fake_fetch_goalie_stats(season_id, db_dir, force_reparse=False):
+        with lock:
+            thread_ids.append(threading.current_thread().ident)
+
+    monkeypatch.setattr("src.shl.poller.fetch_table", fake_fetch_table)
+    monkeypatch.setattr("src.shl.poller.fetch_player_stats", fake_fetch_player_stats)
+    monkeypatch.setattr("src.shl.poller.fetch_goalie_stats", fake_fetch_goalie_stats)
+    # For player/goalie stats interval computation:
+    monkeypatch.setattr("src.shl.poller._are_games_in_progress", lambda cd, sid, n: False)
+
+    results = run_poller_tick(tmp_path, now=now)
+
+    assert len(results) == 3
+    assert all(r["status"] == "ok" for r in results)
+    assert len(thread_ids) == 3
+    # All targets should have been called.
+    result_types = {r["target_type"] for r in results}
+    assert result_types == {"standings", "player_stats", "goalie_stats"}
+
+
+def test_parallel_execution_error_isolation(monkeypatch, tmp_path):
+    """One target failing does not prevent other targets from succeeding."""
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    upsert_poll_target(tmp_path, target_type="standings", target_key="18263",
+                       enabled=True, next_poll_at=_iso(now - timedelta(seconds=1)))
+    upsert_poll_target(tmp_path, target_type="player_stats", target_key="18263",
+                       enabled=True, next_poll_at=_iso(now - timedelta(seconds=1)))
+
+    def fake_fetch_table(season_id, db_dir):
+        raise RuntimeError("fetch_table failed")
+
+    def fake_fetch_player_stats(season_id, db_dir, force_reparse=False):
+        pass  # succeeds
+
+    monkeypatch.setattr("src.shl.poller.fetch_table", fake_fetch_table)
+    monkeypatch.setattr("src.shl.poller.fetch_player_stats", fake_fetch_player_stats)
+    monkeypatch.setattr("src.shl.poller._are_games_in_progress", lambda cd, sid, n: False)
+
+    results = run_poller_tick(tmp_path, now=now)
+
+    assert len(results) == 2
+    statuses = {r["target_type"]: r["status"] for r in results}
+    assert statuses["standings"] == "error"
+    assert statuses["player_stats"] == "ok"
+
+
+def test_parallel_execution_respects_max_workers(monkeypatch, tmp_path):
+    """Thread pool is capped at POLLER_MAX_WORKERS."""
+    import time
+    import threading
+    from src.shl.poller import POLLER_MAX_WORKERS
+
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    # Create more targets than POLLER_MAX_WORKERS.
+    for i in range(POLLER_MAX_WORKERS + 2):
+        upsert_poll_target(tmp_path, target_type="standings", target_key=str(10000 + i),
+                           enabled=True, next_poll_at=_iso(now - timedelta(seconds=1)))
+
+    concurrent_count = []
+    max_concurrent = [0]
+    count_lock = threading.Lock()
+
+    def fake_fetch_table(season_id, db_dir):
+        with count_lock:
+            concurrent_count.append(1)
+            current = len(concurrent_count)
+            if current > max_concurrent[0]:
+                max_concurrent[0] = current
+        time.sleep(0.05)  # Brief sleep to let threads overlap.
+        with count_lock:
+            concurrent_count.pop()
+
+    monkeypatch.setattr("src.shl.poller.fetch_table", fake_fetch_table)
+
+    results = run_poller_tick(tmp_path, now=now)
+
+    assert len(results) == POLLER_MAX_WORKERS + 2
+    assert all(r["status"] == "ok" for r in results)
+    # Max concurrency should not exceed POLLER_MAX_WORKERS.
+    assert max_concurrent[0] <= POLLER_MAX_WORKERS
+
+
+def test_parallel_execution_empty_due_targets(tmp_path):
+    """No targets due produces empty results without error."""
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    results = run_poller_tick(tmp_path, now=now)
+    assert results == []
+
+
+def test_parallel_execution_single_target_works(monkeypatch, tmp_path):
+    """A single due target still works correctly (pool of 1)."""
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    upsert_poll_target(tmp_path, target_type="standings", target_key="18263",
+                       enabled=True, next_poll_at=_iso(now - timedelta(seconds=1)))
+
+    monkeypatch.setattr("src.shl.poller.fetch_table", lambda sid, db: None)
+
+    results = run_poller_tick(tmp_path, now=now)
+    assert len(results) == 1
+    assert results[0]["status"] == "ok"
+    assert results[0]["target_type"] == "standings"

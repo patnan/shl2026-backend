@@ -6,7 +6,7 @@ Identified 2026-08-07. Sorted by category.
 
 - [x] **Store singleton** — `_store(cache_dir)` creates a new `Store` every call (mkdir, executescript, migrations). Cache the instance per `cache_dir` with `functools.lru_cache`. Significant on RPi.
 - [x] **Docker Compose tick-interval** — Poller tick is 30s but live targets are due every 25s. Reduce to `--tick-interval 5` (tick = how often worker checks, not fetch interval).
-- [ ] **Parallel target execution** — Poller runs targets sequentially. Use a thread pool so concurrent targets (schedule + live_games + stats) don't block each other.
+- [x] **Parallel target execution** — Poller runs targets sequentially. Use a thread pool so concurrent targets (schedule + live_games + stats) don't block each other.
 - [ ] **Async REST endpoints** — FastAPI endpoints block the event loop with sync DB reads. Use `async def` + `run_in_executor` for DB-heavy endpoints under load.
 
 ## Reliability / Robustness

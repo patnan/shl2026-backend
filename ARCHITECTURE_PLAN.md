@@ -333,7 +333,7 @@ Phase 1 Step 1 completion notes:
 
 Phase 1 Step 2 completion notes:
 1. Added poller/store helper APIs in [src/shl/store.py](src/shl/store.py) for upserting poll targets, listing due targets, updating poll success/error state, and processing outbox events.
-2. Added scheduler tick execution in [src/shl/poller.py](src/shl/poller.py) with target dispatch (game/schedule/standings), success/error handling, and domain event writes.
+2. Added scheduler tick execution in [src/shl/poller.py](src/shl/poller.py) with target dispatch (game/schedule/standings), success/error handling, and domain event writes. Targets within a tick run in parallel via ThreadPoolExecutor (max 4 workers), with per-thread DB connections for thread safety.
 3. Added unit coverage in [tests/unit/test_poller.py](tests/unit/test_poller.py).
 
 Phase 1 Step 3 completion notes:

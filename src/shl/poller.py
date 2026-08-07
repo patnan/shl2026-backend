@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 import json
 import logging
@@ -10,6 +11,8 @@ import signal
 from time import perf_counter
 from time import sleep as _sleep
 from typing import Any, Dict, List, Optional
+
+import threading
 
 from src.shl.game import fetch_game
 from src.shl.schedule import fetch_live_games, fetch_schedule, get_standings, get_live_standings, compare_live_standings
@@ -70,6 +73,8 @@ CIRCUIT_BREAKER_COOLDOWN_SECONDS = {
 }
 BACKOFF_JITTER_RATIO = 0.15
 
+# Thread pool size for parallel target execution.
+POLLER_MAX_WORKERS = 4
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
@@ -80,6 +85,7 @@ def _to_iso(value: datetime) -> str:
 
 
 _last_live_age: Dict[str, Optional[int]] = {}  # target_key -> last Age header value
+_last_live_age_lock = threading.Lock()
 
 
 def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optional[Path] = None, target_key: Optional[str] = None) -> str:
@@ -89,7 +95,8 @@ def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optio
         interval = _compute_live_games_interval(cache_dir, int(target_key), now)
         # If the response was already aged, we can poll sooner since SweHockey
         # will have fresh data sooner (max_age=20 - age = remaining TTL).
-        age = _last_live_age.get(target_key)
+        with _last_live_age_lock:
+            age = _last_live_age.get(target_key)
         if age is not None and interval == LIVE_GAMES_INTERVAL_ACTIVE:
             # Remaining cache TTL on SweHockey's side = max_age - age.
             # We want to poll right after it expires.
@@ -478,7 +485,8 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
         games, page_last_update, age_seconds = fetch_live_games(season_id, cache_dir)
 
         # Store Age header for interval adjustment in _compute_success_next_poll.
-        _last_live_age[target_key] = age_seconds
+        with _last_live_age_lock:
+            _last_live_age[target_key] = age_seconds
 
         # Early-exit: if page_last_update hasn't changed, SweHockey has no new data.
         if prev_page_last_update and page_last_update == prev_page_last_update:
@@ -539,6 +547,86 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
     raise PollerError(f"Unsupported target_type '{target_type}'")
 
 
+def _execute_target(cache_dir: Path, target: PollTarget, now_value: datetime) -> Dict:
+    """Execute a single poll target and return a result dict. Thread-safe."""
+    target_id = target.id
+    target_type = target.target_type
+    target_key = target.target_key
+    error_count = target.error_count
+    due_age_seconds = 0
+    if target.next_poll_at:
+        due_age_seconds = _due_age_seconds(now_value, target.next_poll_at)
+    started = perf_counter()
+
+    try:
+        _run_target(cache_dir, target_type, target_key)
+        duration_ms = int((perf_counter() - started) * 1000)
+        next_poll_at = _compute_success_next_poll(target_type, now_value, cache_dir, target_key)
+        update_poll_success(cache_dir, target_id, duration_ms, next_poll_at)
+
+        # Disable one_shot targets after successful execution.
+        if target.one_shot:
+            upsert_poll_target(cache_dir, target_type=target_type, target_key=target_key, enabled=False, one_shot=True)
+            logger.info("one_shot_disabled target_id=%d type=%s key=%s", target_id, target_type, target_key)
+
+        insert_domain_event(
+            cache_dir,
+            "poll_completed",
+            f"{target_type}:{target_key}",
+            {
+                "target_id": target_id,
+                "target_type": target_type,
+                "target_key": target_key,
+                "duration_ms": duration_ms,
+                "next_poll_at": next_poll_at,
+            },
+        )
+        return {
+            "target_id": target_id,
+            "target_type": target_type,
+            "target_key": target_key,
+            "status": "ok",
+            "duration_ms": duration_ms,
+            "next_poll_at": next_poll_at,
+            "due_age_seconds": due_age_seconds,
+        }
+    except Exception as exc:
+        duration_ms = int((perf_counter() - started) * 1000)
+        next_poll_at = _compute_error_next_poll(target_type, now_value, error_count)
+        new_error_count = update_poll_error(cache_dir, target_id, duration_ms, next_poll_at)
+        retry_in_seconds = _seconds_until(now_value, next_poll_at)
+        recovery_mode = "circuit_open" if new_error_count >= CIRCUIT_BREAKER_ERROR_THRESHOLD else "backoff"
+        insert_domain_event(
+            cache_dir,
+            "poll_failed",
+            f"{target_type}:{target_key}",
+            {
+                "target_id": target_id,
+                "target_type": target_type,
+                "target_key": target_key,
+                "duration_ms": duration_ms,
+                "next_poll_at": next_poll_at,
+                "error_count": new_error_count,
+                "retry_in_seconds": retry_in_seconds,
+                "recovery_mode": recovery_mode,
+                "error": str(exc),
+            },
+        )
+        return {
+            "target_id": target_id,
+            "target_type": target_type,
+            "target_key": target_key,
+            "status": "error",
+            "duration_ms": duration_ms,
+            "next_poll_at": next_poll_at,
+            "error_count": new_error_count,
+            "retry_in_seconds": retry_in_seconds,
+            "recovery_mode": recovery_mode,
+            "due_age_seconds": due_age_seconds,
+            "error": str(exc),
+        }
+
+
 def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
     now_value = now or _now_utc()
     tick_started = _now_utc()
@@ -546,85 +634,22 @@ def run_poller_tick(cache_dir: Path, now: datetime | None = None) -> List[Dict]:
 
     results: List[Dict] = []
 
-    for target in due_targets:
-        target_id = target.id
-        target_type = target.target_type
-        target_key = target.target_key
-        error_count = target.error_count
-        due_age_seconds = 0
-        if target.next_poll_at:
-            due_age_seconds = _due_age_seconds(now_value, target.next_poll_at)
-        started = perf_counter()
+    if not due_targets:
+        tick_summary = _summarize_tick(results, tick_started, _now_utc())
+        logger.info("poller_tick_summary %s", json.dumps(tick_summary, ensure_ascii=False, sort_keys=True))
+        return results
 
-        try:
-            _run_target(cache_dir, target_type, target_key)
-            duration_ms = int((perf_counter() - started) * 1000)
-            next_poll_at = _compute_success_next_poll(target_type, now_value, cache_dir, target_key)
-            update_poll_success(cache_dir, target_id, duration_ms, next_poll_at)
-
-            # Disable one_shot targets after successful execution.
-            if target.one_shot:
-                upsert_poll_target(cache_dir, target_type=target_type, target_key=target_key, enabled=False, one_shot=True)
-                logger.info("one_shot_disabled target_id=%d type=%s key=%s", target_id, target_type, target_key)
-
-            insert_domain_event(
-                cache_dir,
-                "poll_completed",
-                f"{target_type}:{target_key}",
-                {
-                    "target_id": target_id,
-                    "target_type": target_type,
-                    "target_key": target_key,
-                    "duration_ms": duration_ms,
-                    "next_poll_at": next_poll_at,
-                },
-            )
-            results.append({
-                "target_id": target_id,
-                "target_type": target_type,
-                "target_key": target_key,
-                "status": "ok",
-                "duration_ms": duration_ms,
-                "next_poll_at": next_poll_at,
-                "due_age_seconds": due_age_seconds,
-            })
-        except Exception as exc:
-            duration_ms = int((perf_counter() - started) * 1000)
-            next_poll_at = _compute_error_next_poll(target_type, now_value, error_count)
-            new_error_count = update_poll_error(cache_dir, target_id, duration_ms, next_poll_at)
-            retry_in_seconds = _seconds_until(now_value, next_poll_at)
-            recovery_mode = "circuit_open" if new_error_count >= CIRCUIT_BREAKER_ERROR_THRESHOLD else "backoff"
-            insert_domain_event(
-                cache_dir,
-                "poll_failed",
-                f"{target_type}:{target_key}",
-                {
-                    "target_id": target_id,
-                    "target_type": target_type,
-                    "target_key": target_key,
-                    "duration_ms": duration_ms,
-                    "next_poll_at": next_poll_at,
-                    "error_count": new_error_count,
-                    "retry_in_seconds": retry_in_seconds,
-                    "recovery_mode": recovery_mode,
-                    "error": str(exc),
-                },
-            )
-            results.append({
-                "target_id": target_id,
-                "target_type": target_type,
-                "target_key": target_key,
-                "status": "error",
-                "duration_ms": duration_ms,
-                "next_poll_at": next_poll_at,
-                "error_count": new_error_count,
-                "retry_in_seconds": retry_in_seconds,
-                "recovery_mode": recovery_mode,
-                "due_age_seconds": due_age_seconds,
-                "error": str(exc),
-            })
-
-        _log_result(results[-1])
+    # Execute targets in parallel using a thread pool.
+    # Each target gets its own thread with its own per-thread DB connection (Store uses threading.local).
+    with ThreadPoolExecutor(max_workers=min(POLLER_MAX_WORKERS, len(due_targets))) as executor:
+        future_to_target = {
+            executor.submit(_execute_target, cache_dir, target, now_value): target
+            for target in due_targets
+        }
+        for future in as_completed(future_to_target):
+            result = future.result()
+            _log_result(result)
+            results.append(result)
 
     tick_summary = _summarize_tick(results, tick_started, _now_utc())
     logger.info("poller_tick_summary %s", json.dumps(tick_summary, ensure_ascii=False, sort_keys=True))
