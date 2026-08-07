@@ -288,7 +288,7 @@ def get_standings(season_id: int, db_dir: Path) -> List[StandingsRow]:
                 otl=r.otl,
                 gwsw=r.gwsw,
                 gwsl=r.gwsl,
-                movement=prev_rank_by_team.get(r.team, r.rank) - r.rank,
+                movement=r.rank - prev_rank_by_team.get(r.team, r.rank),
             )
             for r in standings
         ]
@@ -452,6 +452,166 @@ def fetch_live_games(season_id: int, db_dir: Path) -> List[ScheduleEntry]:
 def get_live_games(season_id: int, db_dir: Path) -> Optional[List[ScheduleEntry]]:
     """Load the cached live games for a season, or None if not yet fetched."""
     return load_live_games(db_dir, season_id)
+
+
+def get_live_points(season_id: int, db_dir: Path) -> Dict[str, int]:
+    """Calculate provisional live points for each team from today's games.
+
+    Scoring rules:
+    - Game in progress with tied score: 0 points each (undecided).
+    - Game in progress with leader (regulation): leader gets 3, loser gets 0.
+    - Finished game in OT: winner 2, loser 1.
+    - Finished game in SO: winner 2, loser 1.
+    - Finished game in regulation: winner 3, loser 0.
+
+    For in-progress games that are not tied, we assume regulation (3-0) since
+    OT/SO can only be determined once the game ends. If the game is tied and
+    in OT (4th period), both get 1 point provisionally.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+
+    Returns:
+        Dict mapping team name to provisional points from today's live games.
+    """
+    live = load_live_games(db_dir, season_id)
+    if not live:
+        return {}
+
+    points: Dict[str, int] = {}
+
+    for entry in live:
+        if not entry.game_result or not entry.home_team or not entry.away_team:
+            continue
+
+        score_match = re.search(r"(\d+)\s*-\s*(\d+)", entry.game_result)
+        if not score_match:
+            continue
+
+        home_score = int(score_match.group(1))
+        away_score = int(score_match.group(2))
+        ot = entry.overtime  # "OT", "SO", or ""
+
+        home_team = entry.home_team
+        away_team = entry.away_team
+        points.setdefault(home_team, 0)
+        points.setdefault(away_team, 0)
+
+        if home_score == away_score:
+            # Tied — if in OT/SO period, both get at least 1 point.
+            period_count = len(re.findall(r"\d+-\d+", entry.periods)) if entry.periods else 0
+            if period_count >= 4:
+                points[home_team] += 1
+                points[away_team] += 1
+        elif home_score > away_score:
+            if ot == "OT" or ot == "SO":
+                points[home_team] += 2
+                points[away_team] += 1
+            else:
+                points[home_team] += 3
+        else:
+            if ot == "OT" or ot == "SO":
+                points[away_team] += 2
+                points[home_team] += 1
+            else:
+                points[away_team] += 3
+
+    return points
+
+
+def get_live_standings(season_id: int, db_dir: Path) -> List[StandingsRow]:
+    """Combine base standings with today's live points into a live standings table.
+
+    Merges the static standings (games up to yesterday) with provisional live
+    points from today's games, re-ranks, and calculates movement compared to
+    the base standings rank.
+
+    Movement convention: negative = moved up, positive = moved down.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+
+    Returns:
+        Sorted list of StandingsRow with updated tp, rank, and movement.
+    """
+    standings = get_standings(season_id, db_dir)
+    live_points = get_live_points(season_id, db_dir)
+
+    if not standings:
+        return []
+
+    # Base rank from standings before today's games.
+    base_rank_by_team = {r.team: r.rank for r in standings}
+
+    # Merge live points into standings.
+    merged = []
+    for row in standings:
+        extra = live_points.get(row.team, 0)
+        merged.append(StandingsRow(
+            rank=row.rank,
+            team=row.team,
+            games_played=row.games_played,
+            w=row.w, t=row.t, l=row.l,
+            goals_for=row.goals_for,
+            goals_against=row.goals_against,
+            goal_difference=row.goal_difference,
+            tp=row.tp + extra,
+            otw=row.otw, otl=row.otl,
+            gwsw=row.gwsw, gwsl=row.gwsl,
+        ))
+
+    # Re-sort and re-rank.
+    merged.sort(key=lambda r: (-r.tp, -r.goal_difference, -r.goals_for, r.team))
+    return [
+        StandingsRow(
+            rank=i,
+            team=r.team,
+            games_played=r.games_played,
+            w=r.w, t=r.t, l=r.l,
+            goals_for=r.goals_for,
+            goals_against=r.goals_against,
+            goal_difference=r.goal_difference,
+            tp=r.tp,
+            otw=r.otw, otl=r.otl,
+            gwsw=r.gwsw, gwsl=r.gwsl,
+            movement=i - base_rank_by_team.get(r.team, i),
+        )
+        for i, r in enumerate(merged, start=1)
+    ]
+
+
+def compare_live_standings(
+    previous: List[StandingsRow], current: List[StandingsRow]
+) -> List[Dict]:
+    """Compare two live standings snapshots and detect position changes.
+
+    Args:
+        previous: Previous live standings snapshot.
+        current: Current live standings snapshot.
+
+    Returns:
+        List of dicts describing changes:
+        [{"team": str, "prev_rank": int, "new_rank": int, "movement": int}, ...]
+        Only teams that changed position are included.
+    """
+    prev_rank_by_team = {r.team: r.rank for r in previous}
+    changes = []
+
+    for row in current:
+        prev_rank = prev_rank_by_team.get(row.team)
+        if prev_rank is None:
+            continue
+        if prev_rank != row.rank:
+            changes.append({
+                "team": row.team,
+                "prev_rank": prev_rank,
+                "new_rank": row.rank,
+                "movement": row.rank - prev_rank,
+            })
+
+    return changes
 
 
 fetchSchedule = fetch_schedule

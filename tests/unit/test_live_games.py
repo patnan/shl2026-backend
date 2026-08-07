@@ -219,6 +219,256 @@ class TestParseLiveGamesHtml:
 # ---------------------------------------------------------------------------
 # Store tests
 # ---------------------------------------------------------------------------
+# Live points tests
+# ---------------------------------------------------------------------------
+
+
+class TestGetLivePoints:
+    def test_regulation_win_gives_3_0(self, tmp_path):
+        from src.shl.schedule import get_live_points
+        from src.shl.store import save_live_games
+
+        entries = [
+            ScheduleEntry(
+                date="2026-08-07", time="", home_team="Team A", away_team="Team B",
+                game_result="3 - 1", periods="(2-0, 1-1, 0-0)", spectators="", venue="",
+                game_url="", round="", status="Final Score",
+            ),
+        ]
+        save_live_games(tmp_path, 21139, entries)
+
+        points = get_live_points(21139, tmp_path)
+        assert points["Team A"] == 3
+        assert points["Team B"] == 0
+
+    def test_ot_win_gives_2_1(self, tmp_path):
+        from src.shl.schedule import get_live_points
+        from src.shl.store import save_live_games
+
+        entries = [
+            ScheduleEntry(
+                date="2026-08-07", time="", home_team="Team A", away_team="Team B",
+                game_result="2 - 3", periods="(1-1, 1-1, 0-0, 0-1)", spectators="", venue="",
+                game_url="", round="", status="Final Score",
+            ),
+        ]
+        save_live_games(tmp_path, 21139, entries)
+
+        points = get_live_points(21139, tmp_path)
+        assert points["Team B"] == 2
+        assert points["Team A"] == 1
+
+    def test_so_win_gives_2_1(self, tmp_path):
+        from src.shl.schedule import get_live_points
+        from src.shl.store import save_live_games
+
+        entries = [
+            ScheduleEntry(
+                date="2026-08-07", time="", home_team="Team A", away_team="Team B",
+                game_result="3 - 2", periods="(1-1, 0-1, 1-0, 0-0, 1-0)", spectators="", venue="",
+                game_url="", round="", status="Final Score",
+            ),
+        ]
+        save_live_games(tmp_path, 21139, entries)
+
+        points = get_live_points(21139, tmp_path)
+        assert points["Team A"] == 2
+        assert points["Team B"] == 1
+
+    def test_tied_in_regulation_gives_0_0(self, tmp_path):
+        from src.shl.schedule import get_live_points
+        from src.shl.store import save_live_games
+
+        entries = [
+            ScheduleEntry(
+                date="2026-08-07", time="", home_team="Team A", away_team="Team B",
+                game_result="1 - 1", periods="(1-1, 0-0)", spectators="", venue="",
+                game_url="", round="", status="2nd period (05:00)",
+            ),
+        ]
+        save_live_games(tmp_path, 21139, entries)
+
+        points = get_live_points(21139, tmp_path)
+        assert points["Team A"] == 0
+        assert points["Team B"] == 0
+
+    def test_tied_in_ot_gives_1_1(self, tmp_path):
+        from src.shl.schedule import get_live_points
+        from src.shl.store import save_live_games
+
+        entries = [
+            ScheduleEntry(
+                date="2026-08-07", time="", home_team="Team A", away_team="Team B",
+                game_result="2 - 2", periods="(1-1, 1-1, 0-0, 0-0)", spectators="", venue="",
+                game_url="", round="", status="OT",
+            ),
+        ]
+        save_live_games(tmp_path, 21139, entries)
+
+        points = get_live_points(21139, tmp_path)
+        assert points["Team A"] == 1
+        assert points["Team B"] == 1
+
+    def test_no_live_games_returns_empty(self, tmp_path):
+        from src.shl.schedule import get_live_points
+
+        points = get_live_points(21139, tmp_path)
+        assert points == {}
+
+    def test_upcoming_game_not_counted(self, tmp_path):
+        from src.shl.schedule import get_live_points
+        from src.shl.store import save_live_games
+
+        entries = [
+            ScheduleEntry(
+                date="2026-08-07", time="18:00", home_team="Team A", away_team="Team B",
+                game_result="", periods="", spectators="", venue="Arena",
+                game_url="", round="", status="",
+            ),
+        ]
+        save_live_games(tmp_path, 21139, entries)
+
+        points = get_live_points(21139, tmp_path)
+        assert points == {}
+
+
+class TestGetLiveStandings:
+    def test_merges_live_points_and_reranks(self, tmp_path):
+        from src.shl.schedule import get_live_standings
+        from src.shl.store import save_live_games, save_schedule, save_standings
+        from src.shl.models import StandingsRow
+
+        # Set up schedule with teams
+        schedule = [
+            ScheduleEntry(date="2026-08-06", time="18:00", home_team="Team A", away_team="Team B",
+                          game_result="3 - 1", periods="(1-0, 1-1, 1-0)", spectators="", venue="",
+                          game_url="", round=""),
+            ScheduleEntry(date="2026-08-07", time="18:00", home_team="Team B", away_team="Team A",
+                          game_result="", periods="", spectators="", venue="",
+                          game_url="", round=""),
+        ]
+        save_schedule(tmp_path, 21139, schedule)
+
+        # Save standings snapshot (Team A rank 1, Team B rank 2)
+        prev_standings = [
+            StandingsRow(rank=1, team="Team A", games_played=1, w=1, t=0, l=0,
+                         goals_for=3, goals_against=1, goal_difference=2, tp=3,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+            StandingsRow(rank=2, team="Team B", games_played=1, w=0, t=0, l=1,
+                         goals_for=1, goals_against=3, goal_difference=-2, tp=0,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+        ]
+        save_standings(tmp_path, 21139, prev_standings)
+
+        # Live game: Team B winning 4-0 (regulation = 3 pts)
+        live = [
+            ScheduleEntry(date="2026-08-07", time="", home_team="Team B", away_team="Team A",
+                          game_result="4 - 0", periods="(2-0, 2-0)", spectators="", venue="",
+                          game_url="", round="", status="2nd period"),
+        ]
+        save_live_games(tmp_path, 21139, live)
+
+        result = get_live_standings(21139, tmp_path)
+        assert len(result) == 2
+        # Team A: 3 base + 0 live = 3, Team B: 0 base + 3 live = 3
+        # Tied on points, Team A has better GD (+2 vs -2), so Team A stays rank 1
+        assert result[0].team == "Team A"
+        assert result[0].tp == 3
+        assert result[0].rank == 1
+        assert result[1].team == "Team B"
+        assert result[1].tp == 3
+        assert result[1].rank == 2
+
+    def test_movement_calculated_from_base_rank(self, tmp_path):
+        from src.shl.schedule import get_live_standings
+        from src.shl.store import save_live_games, save_schedule, save_standings
+        from src.shl.models import StandingsRow
+
+        schedule = [
+            ScheduleEntry(date="2026-08-06", time="18:00", home_team="Team A", away_team="Team B",
+                          game_result="1 - 0", periods="(1-0, 0-0, 0-0)", spectators="", venue="",
+                          game_url="", round=""),
+            ScheduleEntry(date="2026-08-06", time="18:00", home_team="Team C", away_team="Team A",
+                          game_result="2 - 0", periods="(1-0, 1-0, 0-0)", spectators="", venue="",
+                          game_url="", round=""),
+        ]
+        save_schedule(tmp_path, 21139, schedule)
+
+        prev_standings = [
+            StandingsRow(rank=1, team="Team C", games_played=1, w=1, t=0, l=0,
+                         goals_for=2, goals_against=0, goal_difference=2, tp=3,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+            StandingsRow(rank=2, team="Team A", games_played=2, w=1, t=0, l=1,
+                         goals_for=1, goals_against=2, goal_difference=-1, tp=3,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+            StandingsRow(rank=3, team="Team B", games_played=1, w=0, t=0, l=1,
+                         goals_for=0, goals_against=1, goal_difference=-1, tp=0,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+        ]
+        save_standings(tmp_path, 21139, prev_standings)
+
+        # Live: Team B gets 3 points, jumps above Team A
+        live = [
+            ScheduleEntry(date="2026-08-07", time="", home_team="Team B", away_team="Team C",
+                          game_result="5 - 0", periods="(2-0, 2-0, 1-0)", spectators="", venue="",
+                          game_url="", round="", status="Final Score"),
+        ]
+        save_live_games(tmp_path, 21139, live)
+
+        result = get_live_standings(21139, tmp_path)
+        # Team C: 3+0=3 (GD +2), Team A: 3+0=3 (GD -1), Team B: 0+3=3 (GD -1)
+        # All have 3 pts. Sort by GD: C(+2), then A(-1) vs B(-1) by GF: A(1) vs B(0) → A first
+        assert result[0].team == "Team C"
+        assert result[0].movement == 0  # rank 1 → 1
+        assert result[1].team == "Team A"
+        assert result[1].movement == 0  # rank 2 → 2
+        assert result[2].team == "Team B"
+        assert result[2].movement == 0  # rank 3 → 3
+
+
+class TestCompareLiveStandings:
+    def test_detects_position_changes(self):
+        from src.shl.schedule import compare_live_standings
+        from src.shl.models import StandingsRow
+
+        prev = [
+            StandingsRow(rank=1, team="A", games_played=0, w=0, t=0, l=0,
+                         goals_for=0, goals_against=0, goal_difference=0, tp=6,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+            StandingsRow(rank=2, team="B", games_played=0, w=0, t=0, l=0,
+                         goals_for=0, goals_against=0, goal_difference=0, tp=3,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+        ]
+        current = [
+            StandingsRow(rank=1, team="B", games_played=0, w=0, t=0, l=0,
+                         goals_for=0, goals_against=0, goal_difference=0, tp=6,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+            StandingsRow(rank=2, team="A", games_played=0, w=0, t=0, l=0,
+                         goals_for=0, goals_against=0, goal_difference=0, tp=6,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+        ]
+
+        changes = compare_live_standings(prev, current)
+        assert len(changes) == 2
+        b_change = next(c for c in changes if c["team"] == "B")
+        a_change = next(c for c in changes if c["team"] == "A")
+        assert b_change == {"team": "B", "prev_rank": 2, "new_rank": 1, "movement": -1}
+        assert a_change == {"team": "A", "prev_rank": 1, "new_rank": 2, "movement": 1}
+
+    def test_no_changes_returns_empty(self):
+        from src.shl.schedule import compare_live_standings
+        from src.shl.models import StandingsRow
+
+        standings = [
+            StandingsRow(rank=1, team="A", games_played=0, w=0, t=0, l=0,
+                         goals_for=0, goals_against=0, goal_difference=0, tp=3,
+                         otw=0, otl=0, gwsw=0, gwsl=0),
+        ]
+        changes = compare_live_standings(standings, standings)
+        assert changes == []
+
+
+# ---------------------------------------------------------------------------
 
 
 class TestStoreLiveGames:

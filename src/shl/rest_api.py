@@ -19,6 +19,8 @@ from src.shl.schedule import (
     get_all_played_games,
     get_games_for_date,
     get_live_games,
+    get_live_points,
+    get_live_standings,
     get_next_round,
     get_played_rounds,
     get_rounds,
@@ -389,6 +391,20 @@ def create_app(cache_dir: Path) -> FastAPI:
                 "source_games_oldest_fetched_at": games_freshness["oldest_fetched_at"],
                 "source_games_cached_count": games_freshness["cached_game_count"],
                 "source_games_requested_count": games_freshness["requested_game_count"],
+                **_meta(),
+            },
+        }
+
+    @app.get("/seasons/{season_id}/standings/live")
+    def season_standings_live(season_id: int) -> Dict[str, Any]:
+        live_standings = get_live_standings(season_id, cache_dir)
+        live_fetched_at = get_live_games_fetched_at(cache_dir, season_id)
+
+        return {
+            "data": _serialize(live_standings),
+            "meta": {
+                "season_id": str(season_id),
+                "source_live_games_fetched_at": live_fetched_at,
                 **_meta(),
             },
         }

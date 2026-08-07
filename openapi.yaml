@@ -208,16 +208,33 @@ paths:
   /seasons/{season_id}/standings:
     get:
       operationId: getStandings
-      summary: League standings (live during games)
+      summary: League standings (up to yesterday)
       description: |
-        Computed from schedule data. During game days, standings reflect
-        in-progress scores within ~30 seconds of a goal.
+        Computed from schedule data. Only includes games up to and including
+        yesterday — today's live games are excluded to keep standings stable.
         Pre-season (no games played): returns all teams at rank 1, sorted alphabetically.
       parameters:
         - $ref: "#/components/parameters/SeasonId"
       responses:
         "200":
           description: Current standings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandingsResponse"
+
+  /seasons/{season_id}/standings/live:
+    get:
+      operationId: getLiveStandings
+      summary: Live standings (includes today's games)
+      description: |
+        Standings merged with provisional live points from today's games.
+        Movement shows position change compared to the base standings (before today).
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+      responses:
+        "200":
+          description: Live standings with today's points included
           content:
             application/json:
               schema:
@@ -592,7 +609,7 @@ components:
           description: Game-winning shot losses (shootout)
         movement:
           type: integer
-          description: Position change since last snapshot (positive = moved up)
+          description: Position change since last snapshot (negative = moved up, positive = moved down)
 
     PlayerStat:
       type: object
