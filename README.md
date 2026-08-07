@@ -13,7 +13,8 @@ Code root: [src](src)
 - Parse a single game page into typed dataclasses.
 - Parse season schedule pages into typed schedule entries.
 - Persist games, schedules, standings, player stats, goalie stats, and rosters in SQLite.
-- Compute standings from played games (effectively live during game days — recalculated every 30s from schedule data). Pre-season: returns all teams at rank 1, sorted alphabetically.
+- Compute standings from played games (up to yesterday — stable during game days). Pre-season: returns all teams at rank 1, sorted alphabetically.
+- Live standings endpoint merging base standings with today's live points, with movement tracking.
 - Standings movement tracking (position change compared to previous snapshot).
 - Fetch standings from SweHockey overview pages.
 - Scrape player scoring leaders from SweHockey.
@@ -181,6 +182,7 @@ python -m src.cli serve --host 127.0.0.1 --port 8000
 
 # 4) In another terminal, query persisted data
 curl "http://127.0.0.1:8000/seasons/18263/standings"
+curl "http://127.0.0.1:8000/seasons/18263/standings/live"
 curl "http://127.0.0.1:8000/seasons/18263/games"
 curl "http://127.0.0.1:8000/seasons/18263/games?date=2025-09-16"
 curl "http://127.0.0.1:8000/seasons/18263/games/today"
