@@ -314,6 +314,38 @@ The notification worker sends push notifications to registered Android/web devic
 | `SHL_LOG_LEVEL` | Log level: DEBUG, INFO, WARNING, ERROR | `INFO` |
 | `SHL_LOG_FORMAT` | Log format: `json` (structured) or `text` (human-readable) | `json` |
 
+### Poller logging
+
+The poller emits structured logs for each target execution and a summary per tick.
+
+**Per-target result** (logged after each target is polled):
+
+```json
+{"target_type": "schedule", "target_key": "20961", "status": "ok", "duration_ms": 234, "next_poll_at": "2026-08-07T12:00:30Z", "due_age_seconds": 2}
+```
+
+On failure:
+
+```json
+{"target_type": "live_games", "target_key": "20961", "status": "error", "error": "Connection timeout", "error_count": 2, "recovery_mode": "backoff", "retry_in_seconds": 120}
+```
+
+**Tick summary** (logged at the end of each polling cycle):
+
+```json
+{"due_targets": 4, "ok_results": 3, "error_results": 1, "success_ratio": 0.75, "avg_duration_ms": 180, "max_duration_ms": 420}
+```
+
+**Viewing logs:**
+
+```bash
+# Local (human-readable)
+SHL_LOG_FORMAT=text ./start_poller.sh
+
+# Docker Compose (follow live)
+docker compose logs -f shl-poller
+```
+
 ### Device registration
 
 Your app registers for notifications on startup:
