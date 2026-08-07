@@ -135,6 +135,8 @@ paths:
         filters the stored schedule by date), this fetches the dedicated Live page
         that shows real-time game status during game days. Data is refreshed every
         30 seconds by the poller and fetched on demand if not yet cached.
+        The response meta includes `page_last_update` with the timestamp from the
+        SweHockey page header indicating when their data was last refreshed.
       parameters:
         - $ref: "#/components/parameters/SeasonId"
       responses:
@@ -518,6 +520,10 @@ components:
         source_fetched_at:
           type: string
           format: date-time
+        page_last_update:
+          type: string
+          nullable: true
+          description: Timestamp from the SweHockey page header indicating when their data was last refreshed (e.g. '2026-08-07 17:21:47')
 
     ScheduleEntry:
       type: object
@@ -566,6 +572,10 @@ components:
           type: string
           enum: ["", "OT", "SO"]
           description: Derived from period count
+        game_state:
+          type: string
+          enum: ["not_started", "ongoing", "intermission", "overtime", "shootout", "finished", "finished_overtime", "finished_shootout"]
+          description: "Computed game state: not_started, ongoing (active play), intermission (between periods), overtime (4th period), shootout (5th+ period), finished (regulation), finished_overtime, finished_shootout"
 
     StandingsRow:
       type: object

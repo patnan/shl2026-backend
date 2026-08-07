@@ -3,7 +3,32 @@ from __future__ import annotations
 import dataclasses
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
+
+
+# ---------------------------------------------------------------------------
+# Type aliases for fixed-value string fields
+# ---------------------------------------------------------------------------
+
+GameState = Literal[
+    "not_started", "ongoing", "intermission",
+    "overtime", "shootout",
+    "finished", "finished_overtime", "finished_shootout",
+]
+
+OvertimeType = Literal["", "OT", "SO"]
+
+ActionEventType = Literal["goal", "penalty", "goalkeeper_in", "goalkeeper_out", "timeout"]
+
+PollTargetType = Literal[
+    "schedule", "standings", "player_stats", "goalie_stats",
+    "rosters", "team_info", "live_games",
+]
+
+DomainEventType = Literal[
+    "score_changed", "game_state_changed", "standings_changed",
+    "live_standings_changed", "poll_completed", "poll_failed",
+]
 
 
 @dataclass(frozen=True)
@@ -37,7 +62,7 @@ class PenaltyTimeRange:
 class Action:
     period: Optional[str]
     game_time: str
-    event_type: str
+    event_type: ActionEventType
     team_abbrev: str
     player_text: str
     players: List[str]
@@ -217,7 +242,7 @@ class ScheduleEntry:
     venue: str
     game_url: str
     round: str
-    status: str = ""  # Game status (e.g. "1st period", "Final Score") — populated during live games.
+    status: str = ""  # Game status (e.g. "1st period", "Game Finished", "Final Score") — populated during live games.
     game_clock: str = ""  # Current game clock (e.g. "01:49") — parsed from status during live games.
     current_period: str = ""  # Current period (e.g. "2nd period") — parsed from status during live games.
 
@@ -240,7 +265,7 @@ class ScheduleEntry:
         )
 
     @property
-    def overtime(self) -> str:
+    def overtime(self) -> OvertimeType:
         """Return 'OT', 'SO', or '' based on period count in the periods string."""
         if not self.periods:
             return ""
@@ -251,9 +276,69 @@ class ScheduleEntry:
             return "OT"
         return ""
 
+    @property
+    def game_state(self) -> GameState:
+        """Computed game state from status, result, and periods.
+
+        Returns one of:
+        - 'not_started': game has not begun (no result, no meaningful status)
+        - 'ongoing': game is in active play (period + clock in status)
+        - 'intermission': between periods (waiting for next period, period ended)
+        - 'overtime': currently in OT (4th period in progress)
+        - 'shootout': currently in SO (5th+ period in progress)
+        - 'finished': game ended in regulation
+        - 'finished_overtime': game ended after OT
+        - 'finished_shootout': game ended after SO
+        """
+        status_lower = self.status.lower()
+
+        # Finished states
+        if status_lower in ("game finished", "final score"):
+            ot = self.overtime
+            if ot == "SO":
+                return "finished_shootout"
+            if ot == "OT":
+                return "finished_overtime"
+            return "finished"
+
+        # No result and no meaningful status = not started
+        if not self.game_result:
+            if not self.status or status_lower.startswith("waiting for 1st"):
+                return "not_started"
+
+        # Intermission: waiting for 2nd/3rd/OT period, or period ended
+        if re.match(r"waiting for (2nd|3rd|ot|overtime)", status_lower):
+            return "intermission"
+        if re.search(r"period ended", status_lower):
+            return "intermission"
+        # Waiting for OT-related periods
+        if re.match(r"waiting for (4th|5th|overtime|shootout)", status_lower):
+            return "intermission"
+
+        # Active play with a clock running
+        if self.game_result and self.game_clock:
+            # Determine period from current_period or period count
+            period_num = 0
+            period_match = re.search(r"(\d+)", self.current_period)
+            if period_match:
+                period_num = int(period_match.group(1))
+
+            if period_num >= 5:
+                return "shootout"
+            if period_num >= 4:
+                return "overtime"
+            return "ongoing"
+
+        # Has a result but no clock (e.g. just started, generic status)
+        if self.game_result:
+            return "ongoing"
+
+        return "not_started"
+
     def to_dict(self) -> Dict:
         d = dataclasses.asdict(self)
         d["overtime"] = self.overtime
+        d["game_state"] = self.game_state
         return d
 
 
@@ -531,7 +616,7 @@ class ScoreChangeResult:
 @dataclass(frozen=True)
 class PollTarget:
     id: int
-    target_type: str
+    target_type: PollTargetType
     target_key: str
     enabled: bool
     one_shot: bool = False
@@ -547,8 +632,8 @@ class PollTarget:
 @dataclass(frozen=True)
 class DomainEvent:
     id: int
-    event_type: str
+    event_type: DomainEventType
     aggregate_key: str
-    payload: Dict
+    payload: Dict[str, Any]
     created_at: Optional[str] = None
     processed_at: Optional[str] = None

@@ -139,6 +139,8 @@ class Store:
         """Add missing columns to existing tables (idempotent)."""
         migrations = [
             ("poll_targets", "one_shot", "INTEGER NOT NULL DEFAULT 0"),
+            ("live_games", "page_last_update", "TEXT"),
+            ("schedule", "page_last_update", "TEXT"),
         ]
         for table, column, col_def in migrations:
             cols = [row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
@@ -251,11 +253,17 @@ class Store:
         ).fetchone()
         return row[0] if row else None
 
-    def save_schedule(self, season_id: int, schedule: List[ScheduleEntry]) -> None:
+    def get_schedule_page_last_update(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT page_last_update FROM schedule WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_schedule(self, season_id: int, schedule: List[ScheduleEntry], page_last_update: Optional[str] = None) -> None:
         conn = self._get_conn()
         conn.execute(
-            "INSERT OR REPLACE INTO schedule (season_id, data, fetched_at) VALUES (?, ?, ?)",
-            (season_id, json.dumps([dataclasses.asdict(e) for e in schedule], ensure_ascii=False), _utc_now_iso()),
+            "INSERT OR REPLACE INTO schedule (season_id, data, fetched_at, page_last_update) VALUES (?, ?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(e) for e in schedule], ensure_ascii=False), _utc_now_iso(), page_last_update),
         )
         conn.commit()
 
@@ -445,13 +453,19 @@ class Store:
         ).fetchone()
         return row[0] if row else None
 
-    def save_live_games(self, season_id: int, games: List[ScheduleEntry]) -> None:
+    def save_live_games(self, season_id: int, games: List[ScheduleEntry], page_last_update: Optional[str] = None) -> None:
         conn = self._get_conn()
         conn.execute(
-            "INSERT OR REPLACE INTO live_games (season_id, data, fetched_at) VALUES (?, ?, ?)",
-            (season_id, json.dumps([dataclasses.asdict(e) for e in games], ensure_ascii=False), _utc_now_iso()),
+            "INSERT OR REPLACE INTO live_games (season_id, data, fetched_at, page_last_update) VALUES (?, ?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(e) for e in games], ensure_ascii=False), _utc_now_iso(), page_last_update),
         )
         conn.commit()
+
+    def get_live_games_page_last_update(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT page_last_update FROM live_games WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
 
     # ------------------------------------------------------------------
     # Poll targets
@@ -745,8 +759,12 @@ def get_schedule_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
     return _store(cache_dir).get_schedule_fetched_at(season_id)
 
 
-def save_schedule(cache_dir: Path, season_id: int, schedule: List[ScheduleEntry]) -> None:
-    _store(cache_dir).save_schedule(season_id, schedule)
+def get_schedule_page_last_update(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_schedule_page_last_update(season_id)
+
+
+def save_schedule(cache_dir: Path, season_id: int, schedule: List[ScheduleEntry], page_last_update: Optional[str] = None) -> None:
+    _store(cache_dir).save_schedule(season_id, schedule, page_last_update)
 
 
 def load_player_stats(cache_dir: Path, season_id: int) -> Optional[List[PlayerStat]]:
@@ -888,8 +906,12 @@ def get_live_games_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
     return _store(cache_dir).get_live_games_fetched_at(season_id)
 
 
-def save_live_games(cache_dir: Path, season_id: int, games: List[ScheduleEntry]) -> None:
-    _store(cache_dir).save_live_games(season_id, games)
+def save_live_games(cache_dir: Path, season_id: int, games: List[ScheduleEntry], page_last_update: Optional[str] = None) -> None:
+    _store(cache_dir).save_live_games(season_id, games, page_last_update)
+
+
+def get_live_games_page_last_update(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_live_games_page_last_update(season_id)
 
 
 def cache_db_path(cache_dir: Path) -> Path:

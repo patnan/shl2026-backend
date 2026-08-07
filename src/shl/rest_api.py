@@ -29,7 +29,7 @@ from src.shl.schedule import (
     get_todays_games,
     fetch_live_games,
 )
-from src.shl.store import get_games_freshness, get_schedule_fetched_at, get_live_games_fetched_at
+from src.shl.store import get_games_freshness, get_schedule_fetched_at, get_schedule_page_last_update, get_live_games_fetched_at, get_live_games_page_last_update
 from src.shl.store import get_game_fetched_at, load_game
 from src.shl.store import register_device, unregister_device
 from src.shl.stats import fetch_rosters, fetch_team_info, fetch_team_player_stats, get_goalie_stats, get_player_stats, get_rosters, get_team_info
@@ -209,12 +209,14 @@ def create_app(cache_dir: Path) -> FastAPI:
         if schedule is None:
             raise HTTPException(status_code=404, detail=f"No schedule stored for season {season_id}")
         source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+        page_last_update = get_schedule_page_last_update(cache_dir, season_id)
 
         return {
             "data": _serialize(schedule),
             "meta": {
                 "season_id": str(season_id),
                 "source_fetched_at": source_fetched_at,
+                "page_last_update": page_last_update,
                 **_meta(),
             },
         }
@@ -225,6 +227,7 @@ def create_app(cache_dir: Path) -> FastAPI:
         if not rounds:
             raise HTTPException(status_code=404, detail=f"No schedule stored for season {season_id}")
         source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+        page_last_update = get_schedule_page_last_update(cache_dir, season_id)
 
         return {
             "data": [{"round": r["round"], "games": _serialize(r["games"])} for r in rounds],
@@ -232,6 +235,7 @@ def create_app(cache_dir: Path) -> FastAPI:
                 "season_id": str(season_id),
                 "total_rounds": len(rounds),
                 "source_fetched_at": source_fetched_at,
+                "page_last_update": page_last_update,
                 **_meta(),
             },
         }
@@ -242,6 +246,7 @@ def create_app(cache_dir: Path) -> FastAPI:
         if not rounds:
             raise HTTPException(status_code=404, detail=f"No played rounds found for season {season_id}")
         source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+        page_last_update = get_schedule_page_last_update(cache_dir, season_id)
 
         return {
             "data": [{"round": r["round"], "games": _serialize(r["games"])} for r in rounds],
@@ -249,6 +254,7 @@ def create_app(cache_dir: Path) -> FastAPI:
                 "season_id": str(season_id),
                 "total_rounds": len(rounds),
                 "source_fetched_at": source_fetched_at,
+                "page_last_update": page_last_update,
                 **_meta(),
             },
         }
@@ -259,12 +265,14 @@ def create_app(cache_dir: Path) -> FastAPI:
         if next_round is None:
             raise HTTPException(status_code=404, detail=f"No upcoming round found for season {season_id}")
         source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+        page_last_update = get_schedule_page_last_update(cache_dir, season_id)
 
         return {
             "data": {"round": next_round["round"], "games": _serialize(next_round["games"])},
             "meta": {
                 "season_id": str(season_id),
                 "source_fetched_at": source_fetched_at,
+                "page_last_update": page_last_update,
                 **_meta(),
             },
         }
@@ -273,12 +281,14 @@ def create_app(cache_dir: Path) -> FastAPI:
     def season_todays_games(season_id: int) -> Dict[str, Any]:
         games = get_todays_games(season_id, cache_dir)
         source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+        page_last_update = get_schedule_page_last_update(cache_dir, season_id)
         return {
             "data": _serialize(games),
             "meta": {
                 "season_id": str(season_id),
                 "count": len(games),
                 "source_fetched_at": source_fetched_at,
+                "page_last_update": page_last_update,
                 **_meta(),
             },
         }
@@ -294,7 +304,7 @@ def create_app(cache_dir: Path) -> FastAPI:
         if games is None:
             # Bootstrap cache on first request before poller has populated it.
             try:
-                games = fetch_live_games(season_id, cache_dir)
+                games, _ = fetch_live_games(season_id, cache_dir)
             except Exception:
                 logger.exception("Failed to fetch live games for season %s", season_id)
                 return JSONResponse(
@@ -302,12 +312,14 @@ def create_app(cache_dir: Path) -> FastAPI:
                     content={"error": "Failed to fetch live games from upstream."},
                 )
         source_fetched_at = get_live_games_fetched_at(cache_dir, season_id)
+        page_last_update = get_live_games_page_last_update(cache_dir, season_id)
         return {
             "data": _serialize(games),
             "meta": {
                 "season_id": str(season_id),
                 "count": len(games),
                 "source_fetched_at": source_fetched_at,
+                "page_last_update": page_last_update,
                 **_meta(),
             },
         }
@@ -315,6 +327,7 @@ def create_app(cache_dir: Path) -> FastAPI:
     @app.get("/seasons/{season_id}/games")
     def season_games(season_id: int, date: Optional[date] = None) -> Dict[str, Any]:
         source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+        page_last_update = get_schedule_page_last_update(cache_dir, season_id)
         if date is not None:
             games = get_games_for_date(season_id, date.isoformat(), cache_dir)
             return {
@@ -323,6 +336,7 @@ def create_app(cache_dir: Path) -> FastAPI:
                     "season_id": str(season_id),
                     "date": date.isoformat(),
                     "source_schedule_fetched_at": source_fetched_at,
+                    "page_last_update": page_last_update,
                     **_meta(),
                 },
             }
@@ -339,6 +353,7 @@ def create_app(cache_dir: Path) -> FastAPI:
                 "season_id": str(season_id),
                 "count": len(schedule),
                 "source_schedule_fetched_at": source_fetched_at,
+                "page_last_update": page_last_update,
                 **_meta(),
             },
         }

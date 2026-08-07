@@ -167,7 +167,7 @@ def test_fetch_schedule_uses_cached_data_by_default(monkeypatch, tmp_path):
 
     monkeypatch.setattr("src.shl.schedule.load_schedule", lambda db_dir, season_id: cached)
     monkeypatch.setattr("src.shl.schedule.extract_schedule_games", lambda url: pytest.fail("extract_schedule_games should not be called"))
-    monkeypatch.setattr("src.shl.schedule.save_schedule", lambda db_dir, season_id, schedule: pytest.fail("save_schedule should not be called"))
+    monkeypatch.setattr("src.shl.schedule.save_schedule", lambda db_dir, season_id, schedule, page_last_update=None: pytest.fail("save_schedule should not be called"))
 
     result = fetch_schedule(18263, tmp_path)
     assert result is cached
@@ -181,9 +181,9 @@ def test_fetch_schedule_force_reparse_bypasses_cache(monkeypatch, tmp_path):
 
     def fake_extract(url):
         calls["extract"] += 1
-        return fresh
+        return fresh, "2026-08-04 09:39"
 
-    def fake_save(db_dir, season_id, schedule):
+    def fake_save(db_dir, season_id, schedule, page_last_update=None):
         calls["save"] += 1
 
     monkeypatch.setattr("src.shl.schedule.extract_schedule_games", fake_extract)
@@ -202,9 +202,9 @@ def test_fetch_schedule_cache_miss_fetches_and_saves(monkeypatch, tmp_path):
 
     def fake_extract(url):
         calls["extract"] += 1
-        return fresh
+        return fresh, None
 
-    def fake_save(db_dir, season_id, schedule):
+    def fake_save(db_dir, season_id, schedule, page_last_update=None):
         calls["save"] += 1
 
     monkeypatch.setattr("src.shl.schedule.extract_schedule_games", fake_extract)

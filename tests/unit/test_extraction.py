@@ -38,7 +38,7 @@ def test_extract_games_from_listing_scrapes_each_game(monkeypatch):
         return [
             make_schedule_entry("2025-09-13", "https://stats.swehockey.se/Game/Events/1004840"),
             make_schedule_entry("2025-09-13", "https://stats.swehockey.se/Game/Events/1004841"),
-        ]
+        ], None
 
     captured_urls = []
 
@@ -65,7 +65,7 @@ def test_extract_games_from_listing_raises_descriptive_error_on_game_failure(mon
         return [
             make_schedule_entry("2025-09-13", "https://stats.swehockey.se/Game/Events/1004840"),
             make_schedule_entry("2025-09-13", bad_url),
-        ]
+        ], None
 
     def fake_extract_game(url):
         if url == bad_url:
@@ -87,7 +87,7 @@ def test_extract_games_from_listing_raises_descriptive_error_on_game_failure(mon
 def test_extract_games_from_listing_raises_when_no_event_links(monkeypatch):
     listing_url = "https://stats.swehockey.se/Tournaments/SHL"
 
-    monkeypatch.setattr("src.shl.helpers.extraction.extract_schedule_games", lambda url: [])
+    monkeypatch.setattr("src.shl.helpers.extraction.extract_schedule_games", lambda url: ([], None))
 
     with pytest.raises(GameScrapeError, match="No game event links were found"):
         extract_games_from_listing(listing_url)
@@ -101,7 +101,7 @@ def test_extract_games_from_listing_progress_callback(monkeypatch):
         return [
             make_schedule_entry("2025-09-13", "https://stats.swehockey.se/Game/Events/1004840"),
             make_schedule_entry("2025-09-13", "https://stats.swehockey.se/Game/Events/1004841"),
-        ]
+        ], None
 
     monkeypatch.setattr("src.shl.helpers.extraction.extract_schedule_games", fake_extract_schedule_games)
     monkeypatch.setattr("src.shl.helpers.extraction.extract_game", lambda url: make_game(url))
@@ -264,7 +264,7 @@ def test_extract_games_from_listing_by_date_scrapes_only_matching_games(monkeypa
             make_schedule_entry("2025-09-16", "https://stats.swehockey.se/Game/Events/1004308"),
             make_schedule_entry("2025-09-16", "https://stats.swehockey.se/Game/Events/1004309"),
             make_schedule_entry("2025-09-18", "https://stats.swehockey.se/Game/Events/1004310"),
-        ]
+        ], None
 
     captured_urls = []
 
@@ -290,7 +290,7 @@ def test_extract_games_from_listing_by_date_scrapes_only_matching_games(monkeypa
 def test_extract_games_from_listing_by_date_returns_empty_for_missing_date(monkeypatch):
     monkeypatch.setattr(
         "src.shl.helpers.extraction.extract_schedule_games",
-        lambda url: [make_schedule_entry("2025-09-18", "https://stats.swehockey.se/Game/Events/1004310")],
+        lambda url: ([make_schedule_entry("2025-09-18", "https://stats.swehockey.se/Game/Events/1004310")], None),
     )
 
     results = extract_games_from_listing_by_date(
@@ -303,7 +303,7 @@ def test_extract_games_from_listing_by_date_returns_empty_for_missing_date(monke
 def test_extract_games_from_listing_by_date_raises_on_game_scrape_failure(monkeypatch):
     monkeypatch.setattr(
         "src.shl.helpers.extraction.extract_schedule_games",
-        lambda url: [make_schedule_entry("2025-09-16", "https://stats.swehockey.se/Game/Events/1004308")],
+        lambda url: ([make_schedule_entry("2025-09-16", "https://stats.swehockey.se/Game/Events/1004308")], None),
     )
     monkeypatch.setattr("src.shl.helpers.extraction.extract_game", lambda url: (_ for _ in ()).throw(RuntimeError("boom")))
 
@@ -333,7 +333,7 @@ def test_extract_schedule_games_from_listing_html_parses_expected_fields():
   </table>
 </body></html>
 """
-    games = extract_schedule_games_from_listing_html(
+    games, page_last_update = extract_schedule_games_from_listing_html(
         html,
         base_url="https://stats.swehockey.se/ScheduleAndResults/Schedule/18263",
     )
@@ -378,7 +378,7 @@ def test_extract_schedule_games_from_listing_html_keeps_grouped_rows_without_rep
   </table>
 </body></html>
 """
-    games = extract_schedule_games_from_listing_html(
+    games, _ = extract_schedule_games_from_listing_html(
         html,
         base_url="https://stats.swehockey.se/ScheduleAndResults/Schedule/18263",
     )
@@ -420,7 +420,7 @@ def test_extract_schedule_games_from_listing_html_deduplicates_same_game_url():
   </table>
 </body></html>
 """
-    games = extract_schedule_games_from_listing_html(
+    games, _ = extract_schedule_games_from_listing_html(
         html,
         base_url="https://stats.swehockey.se/ScheduleAndResults/Schedule/18263",
     )
@@ -449,7 +449,7 @@ def test_extract_schedule_games_fetches_and_parses(monkeypatch):
 """
     monkeypatch.setattr("src.shl.helpers.extraction.fetch_html", lambda url: html)
 
-    games = extract_schedule_games(listing_url)
+    games, _ = extract_schedule_games(listing_url)
 
     assert games[0].round == "2"
     assert games[0].game_url == "https://stats.swehockey.se/Game/Events/1004310"
@@ -490,7 +490,7 @@ def test_extract_schedule_games_from_listing_html_7col_format():
   </table>
 </body></html>
 """
-    games = extract_schedule_games_from_listing_html(
+    games, _ = extract_schedule_games_from_listing_html(
         html,
         base_url="https://stats.swehockey.se/ScheduleAndResults/Schedule/21138",
     )
@@ -531,7 +531,7 @@ def test_extract_games_from_listing_uses_schedule_games_json(monkeypatch):
         return [
             make_schedule_entry("2025-09-13", "https://stats.swehockey.se/Game/Events/1004308"),
             make_schedule_entry("2025-09-13", "https://stats.swehockey.se/Game/Events/1004309"),
-        ]
+        ], None
 
     captured_urls = []
 
@@ -549,3 +549,56 @@ def test_extract_games_from_listing_uses_schedule_games_json(monkeypatch):
         "https://stats.swehockey.se/Game/Events/1004308",
         "https://stats.swehockey.se/Game/Events/1004309",
     ]
+
+
+def test_extract_schedule_games_from_listing_html_extracts_last_update():
+    html = """
+<html><body>
+  <table class="tblContent">
+    <tr><th>Schedule</th><th>Last update:\xa02026-08-04 09:39</th></tr>
+    <tr><td colspan="8">Round 1</td></tr>
+    <tr>
+      <td>2025-09-13</td>
+      <td>2025-09-1315:15</td>
+      <td>15:15</td>
+      <td>Team A - Team B</td>
+      <td>2 - 1</td>
+      <td>(1-0, 1-1, 0-0)</td>
+      <td>5000</td>
+      <td>Arena X</td>
+      <td><a href="/Game/Events/1001">Match</a></td>
+    </tr>
+  </table>
+</body></html>
+"""
+    games, page_last_update = extract_schedule_games_from_listing_html(
+        html, base_url="https://stats.swehockey.se/Schedule/1"
+    )
+    assert len(games) == 1
+    assert page_last_update == "2026-08-04 09:39"
+
+
+def test_extract_schedule_games_from_listing_html_returns_none_when_no_last_update():
+    html = """
+<html><body>
+  <table>
+    <tr><td colspan="8">Round 1</td></tr>
+    <tr>
+      <td>2025-09-13</td>
+      <td>2025-09-1315:15</td>
+      <td>15:15</td>
+      <td>Team A - Team B</td>
+      <td>2 - 1</td>
+      <td>(1-0, 1-1)</td>
+      <td>5000</td>
+      <td>Arena X</td>
+      <td><a href="/Game/Events/1001">Match</a></td>
+    </tr>
+  </table>
+</body></html>
+"""
+    games, page_last_update = extract_schedule_games_from_listing_html(
+        html, base_url="https://stats.swehockey.se/Schedule/1"
+    )
+    assert len(games) == 1
+    assert page_last_update is None

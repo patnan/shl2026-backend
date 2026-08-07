@@ -18,6 +18,7 @@ from src.shl.models import PollTarget
 from src.shl.store import (
     insert_domain_event,
     list_due_poll_targets,
+    load_live_games,
     load_schedule,
     save_standings,
     upsert_poll_target,
@@ -374,10 +375,45 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
 
     if target_type == "live_games":
         season_id = int(target_key)
-        # Snapshot live standings before fetching new data.
+        # Snapshot previous live games and standings before fetching new data.
+        prev_live_games = load_live_games(cache_dir, season_id) or []
         prev_live_standings = get_live_standings(season_id, cache_dir)
 
         fetch_live_games(season_id, cache_dir)
+        new_live_games = load_live_games(cache_dir, season_id) or []
+
+        # Detect game state changes (game ended).
+        _FINISHED_STATUSES = {"game finished", "final score"}
+        prev_statuses: Dict[str, str] = {}
+        for entry in prev_live_games:
+            if entry.game_url:
+                prev_statuses[entry.game_url] = entry.status
+
+        for entry in new_live_games:
+            if not entry.game_url or not entry.status:
+                continue
+            if entry.status.lower() in _FINISHED_STATUSES:
+                prev_status = prev_statuses.get(entry.game_url, "")
+                if prev_status.lower() not in _FINISHED_STATUSES:
+                    game_id_match = re.search(r"/(\d+)$", entry.game_url)
+                    game_id = int(game_id_match.group(1)) if game_id_match else 0
+                    insert_domain_event(
+                        cache_dir,
+                        "game_state_changed",
+                        f"game:{game_id}" if game_id else entry.game_url,
+                        {
+                            "game_id": game_id,
+                            "home_team": entry.home_team,
+                            "away_team": entry.away_team,
+                            "score": entry.game_result,
+                            "current_state": entry.status,
+                            "previous_state": prev_status,
+                        },
+                    )
+                    logger.info(
+                        "game_state_changed game_id=%d %s vs %s status=%r score=%s",
+                        game_id, entry.home_team, entry.away_team, entry.status, entry.game_result,
+                    )
 
         # Compute new live standings and compare.
         new_live_standings = get_live_standings(season_id, cache_dir)

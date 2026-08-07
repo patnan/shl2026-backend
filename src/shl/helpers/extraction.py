@@ -4,7 +4,7 @@ import re
 import time
 from datetime import date
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 from urllib.parse import urljoin
 
 import requests
@@ -168,9 +168,19 @@ def extract_game_urls_from_listing_html_by_date(html: str, base_url: str, game_d
         ) from exc
 
 
-def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[ScheduleEntry]:
+def extract_schedule_games_from_listing_html(html: str, base_url: str = '') -> Tuple[List[ScheduleEntry], Optional[str]]:
     try:
         soup = BeautifulSoup(html, "html.parser")
+
+        # Extract "Last update:" timestamp from page header.
+        page_last_update: Optional[str] = None
+        for th in soup.find_all("th"):
+            th_text = th.get_text()
+            lu_match = re.search(r"Last update:\s*(.+)", th_text)
+            if lu_match:
+                page_last_update = lu_match.group(1).strip()
+                break
+
         schedule_games: List[ScheduleEntry] = []
         seen_game_urls = set()
         current_round: Optional[int] = None
@@ -301,14 +311,14 @@ def extract_schedule_games_from_listing_html(html: str, base_url: str) -> List[S
                 round=str(current_round) if current_round is not None else "",
             ))
 
-        return schedule_games
+        return schedule_games, page_last_update
     except Exception as exc:
         raise ExtractScheduleGamesFromListingHtmlError(
             f"extract_schedule_games_from_listing_html failed for base_url '{base_url}': {exc}"
         ) from exc
 
 
-def extract_schedule_games(listing_url: str) -> List[ScheduleEntry]:
+def extract_schedule_games(listing_url: str) -> Tuple[List[ScheduleEntry], Optional[str]]:
     try:
         listing_html = fetch_html(listing_url)
         return extract_schedule_games_from_listing_html(listing_html, base_url=listing_url)
@@ -386,7 +396,7 @@ def extract_games_from_listing_with_progress(
         ExtractGamesFromListingWithProgressError: If any game fails to scrape.
     """
     try:
-        schedule_games = extract_schedule_games(listing_url)
+        schedule_games, _ = extract_schedule_games(listing_url)
         game_urls = [entry.game_url for entry in schedule_games if entry.game_url]
 
         if not game_urls:
@@ -429,7 +439,7 @@ def extract_games_from_listing_by_date(listing_url: str, game_date: str) -> List
         ExtractGamesFromListingByDateError: If scraping fails.
     """
     try:
-        schedule_games = extract_schedule_games(listing_url)
+        schedule_games, _ = extract_schedule_games(listing_url)
         game_urls = [entry.game_url for entry in schedule_games if entry.date == game_date and entry.game_url]
 
         if not game_urls:
@@ -453,7 +463,7 @@ def extract_games_from_listing_by_date(listing_url: str, game_date: str) -> List
         ) from exc
 
 
-def parse_live_games_html(html: str) -> List[ScheduleEntry]:
+def parse_live_games_html(html: str) -> Tuple[List[ScheduleEntry], Optional[str]]:
     """Parse the SweHockey Live page HTML to extract today's games.
 
     The live page uses Bootstrap responsive divs. Each game appears twice:
@@ -477,11 +487,22 @@ def parse_live_games_html(html: str) -> List[ScheduleEntry]:
         html: Raw HTML string from the Live page.
 
     Returns:
-        List of ScheduleEntry dataclasses for each game found.
+        Tuple of (List of ScheduleEntry dataclasses, page_last_update timestamp or None).
     """
     soup = BeautifulSoup(html, "html.parser")
     entries: List[ScheduleEntry] = []
     seen: set = set()
+
+    # Extract "Last update: YYYY-MM-DD HH:MM:SS" from the page header.
+    page_last_update: Optional[str] = None
+    last_update_div = soup.find("div", class_=re.compile(r"pageTitleRight"))
+    if last_update_div:
+        last_update_match = re.search(
+            r"Last update:\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})",
+            last_update_div.get_text(),
+        )
+        if last_update_match:
+            page_last_update = last_update_match.group(1)
 
     today_str = date.today().isoformat()
 
@@ -595,17 +616,18 @@ def parse_live_games_html(html: str) -> List[ScheduleEntry]:
             current_period=current_period,
         ))
 
-    return entries
+    return entries, page_last_update
 
 
-def extract_live_games(season_id: int) -> List[ScheduleEntry]:
+def extract_live_games(season_id: int) -> Tuple[List[ScheduleEntry], Optional[str]]:
     """Fetch and parse the SweHockey Live page for a season.
 
     Args:
         season_id: SweHockey season/tournament ID.
 
     Returns:
-        List of ScheduleEntry dataclasses for today's live/upcoming games.
+        Tuple of (List of ScheduleEntry dataclasses for today's live/upcoming games,
+        page_last_update timestamp or None).
 
     Raises:
         ExtractLiveGamesError: If fetching or parsing fails.

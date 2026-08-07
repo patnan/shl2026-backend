@@ -191,11 +191,12 @@ One row from a season schedule page.
 | `game_clock` | `str` | Current game clock parsed from status (e.g. `"01:49"`). Empty when not in progress. |
 | `current_period` | `str` | Current period parsed from status (e.g. `"2nd period"`). Empty when not in progress. |
 
-Computed property (included in `to_dict` output):
+Computed properties (included in `to_dict` output):
 
 | Property | Type | Description |
 |---|---|---|
 | `overtime` | `str` | `"OT"` (4 periods), `"SO"` (5 periods), or `""` (regulation/unplayed) |
+| `game_state` | `str` | Computed game state: `not_started`, `ongoing`, `intermission`, `overtime`, `shootout`, `finished`, `finished_overtime`, `finished_shootout` |
 
 Has `to_dict` for JSON serialisation.
 
@@ -328,9 +329,10 @@ Represents a poll target with its scheduling state. Returned by store list/query
 | Field | Type | Description |
 |---|---|---|
 | `id` | `int` | Target ID (primary key) |
-| `target_type` | `str` | `"game"`, `"schedule"`, or `"standings"` |
-| `target_key` | `str` | Game ID or season ID as string |
+| `target_type` | `str` | `"schedule"`, `"standings"`, `"player_stats"`, `"goalie_stats"`, `"rosters"`, `"team_info"`, `"live_games"` |
+| `target_key` | `str` | Season ID as string |
 | `enabled` | `bool` | Whether the target is active |
+| `one_shot` | `bool` | If true, target is disabled after first successful execution |
 | `created_at` | `Optional[str]` | ISO timestamp of creation |
 | `updated_at` | `Optional[str]` | ISO timestamp of last update |
 | `last_success_at` | `Optional[str]` | ISO timestamp of last successful poll |
@@ -421,3 +423,49 @@ Key methods:
 - `find(swehockey_team_name, jersey_number)` → `Optional[ShlSePlayer]`
 - `get_portrait_url(swehockey_team_name, jersey_number)` → `Optional[str]`
 - `get_team_logo_url(swehockey_team_name)` → `Optional[str]`
+
+---
+
+## TeamInfo
+
+Team abbreviation mapping (scraped dynamically per season from SweHockey roster navigation).
+
+| Field | Type | Description |
+|---|---|---|
+| `team` | `str` | Full team name (e.g. `"Skellefteå AIK"`) |
+| `abbreviation` | `str` | Short abbreviation (e.g. `"SKE"`) |
+
+Has `to_dict` for JSON serialisation.
+
+---
+
+## TeamPlayerStat
+
+Per-player game statistics for a specific team (scraped from team stats page).
+
+| Field | Type | Description |
+|---|---|---|
+| `team` | `str` | Team name |
+| `rank` | `int` | Ranking within team |
+| `jersey` | `int` | Jersey number |
+| `name` | `str` | Player name |
+| `position` | `str` | Position (e.g. `"CE"`, `"LW"`, `"D"`, `"GK"`) |
+| `games_played` | `int` | Games played |
+| `goals` | `int` | Goals |
+| `assists` | `int` | Assists |
+| `total_points` | `int` | Total points (G + A) |
+| `penalty_minutes` | `int` | Penalty minutes |
+| `plus` | `int` | Plus (on ice for goals for) |
+| `minus` | `int` | Minus (on ice for goals against) |
+| `plus_minus` | `int` | Plus/minus |
+| `gwg` | `int` | Game-winning goals |
+| `ppg` | `int` | Power-play goals |
+| `shg` | `int` | Short-handed goals |
+| `sog` | `int` | Shots on goal |
+| `sg_pct` | `Optional[float]` | Shooting percentage |
+| `fo_won` | `int` | Faceoffs won |
+| `fo_lost` | `int` | Faceoffs lost |
+| `fo_total` | `int` | Faceoffs total |
+| `fo_pct` | `Optional[float]` | Faceoff win percentage |
+
+Has `to_dict` for JSON serialisation.

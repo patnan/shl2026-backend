@@ -109,7 +109,9 @@ The SweHockey Live page at `/ScheduleAndResults/Live/{season_id}` lists today's 
 
 The poller keeps the live games cache fresh every 30 seconds. If the cache is empty (first request before poller has run), the API endpoint fetches on demand and caches the result.
 
-The live games parser extracts: home/away teams, score, period scores, game_url (from score link), venue, start time, game status (e.g. "2nd period"), game clock (e.g. "01:49"), and current period. The game page parser also works during live games (no longer requires "Final Score" in the HTML).
+The live games parser extracts: home/away teams, score, period scores, game_url (from score link), venue, start time, game status (e.g. "2nd period"), game clock (e.g. "01:49"), and current period. It also extracts the "Last update" timestamp from the SweHockey page header, which indicates when their data was last refreshed. This is stored in the `page_last_update` column and exposed in the API meta. The game page parser also works during live games (no longer requires "Final Score" in the HTML).
+
+The live page has two sections: "Upcoming / In Progress" (active/upcoming games) and "Final Score" (finished games). Both are parsed. When a game transitions to a finished state ("Game Finished" or "Final Score"), the poller emits a `game_state_changed` domain event which triggers a push notification.
 
 ## DB Design
 

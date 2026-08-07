@@ -1,7 +1,7 @@
 import re
 from datetime import date, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from src.shl.helpers.extraction import (
     extract_live_games,
@@ -51,8 +51,8 @@ def fetch_schedule(season_id: int, db_dir: Path, force_reparse: bool = False) ->
                 return cached
 
         url = f"https://stats.swehockey.se/ScheduleAndResults/Schedule/{season_id}"
-        schedule = extract_schedule_games(url)
-        save_schedule(db_dir, season_id, schedule)
+        schedule, page_last_update = extract_schedule_games(url)
+        save_schedule(db_dir, season_id, schedule, page_last_update)
         return schedule
     except Exception as exc:
         raise FetchScheduleError(f"fetch_schedule failed for season '{season_id}': {exc}") from exc
@@ -424,7 +424,7 @@ def calculate_standings_from_schedule(entries: List[ScheduleEntry]) -> List[Stan
     ]
 
 
-def fetch_live_games(season_id: int, db_dir: Path) -> List[ScheduleEntry]:
+def fetch_live_games(season_id: int, db_dir: Path) -> Tuple[List[ScheduleEntry], Optional[str]]:
     """Fetch today's live/upcoming games from the SweHockey Live page.
 
     Scrapes the Live page for the season and persists the result to the database.
@@ -436,15 +436,16 @@ def fetch_live_games(season_id: int, db_dir: Path) -> List[ScheduleEntry]:
         db_dir: Path to the cache/database directory.
 
     Returns:
-        List of ScheduleEntry dataclasses for today's games.
+        Tuple of (List of ScheduleEntry dataclasses for today's games,
+        page_last_update timestamp or None).
 
     Raises:
         FetchLiveGamesError: If scraping or saving fails.
     """
     try:
-        games = extract_live_games(season_id)
-        save_live_games(db_dir, season_id, games)
-        return games
+        games, page_last_update = extract_live_games(season_id)
+        save_live_games(db_dir, season_id, games, page_last_update)
+        return games, page_last_update
     except Exception as exc:
         raise FetchLiveGamesError(f"fetch_live_games failed for season '{season_id}': {exc}") from exc
 

@@ -24,6 +24,9 @@ LIVE_PAGE_HTML = """
 <html>
 <body>
 <div class="row bgContainer">
+  <div class="row"><div class="tdTitle pageTitle col-5"><h2>Games</h2></div><div class="tdTitleRight pageTitleRight col-7">
+                Last update: 2026-08-07 17:45:48
+            </div></div>
   <div class="col-12 p-0"><div class="tdSubTitle pageSubTitle">Upcoming / In Progress</div></div>
   <div class="col-12">
     <div class="row d-flex d-sm-none">
@@ -127,93 +130,101 @@ LIVE_PAGE_EMPTY_HTML = """
 
 class TestParseLiveGamesHtml:
     def test_parses_three_games_from_duplicate_responsive_html(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert len(entries) == 3
 
     def test_extracts_home_team(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].home_team == "Rögle BK"
         assert entries[1].home_team == "Leksands IF"
         assert entries[2].home_team == "Linköping HC"
 
     def test_extracts_away_team(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].away_team == "IF Malmö Redhawks"
         assert entries[1].away_team == "Djurgårdens IF"
         assert entries[2].away_team == "HV 71"
 
     def test_extracts_time_for_upcoming(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[1].time == "17:00"
 
     def test_extracts_venue_for_upcoming(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[1].venue == "Clas Ohlson Foundation Arena"
 
     def test_date_is_today(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         today_str = date.today().isoformat()
         assert entries[0].date == today_str
         assert entries[1].date == today_str
 
     def test_game_result_empty_for_upcoming(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[1].game_result == ""
 
     def test_extracts_score_for_in_progress_game(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].game_result == "2 - 1"
 
     def test_extracts_periods_for_in_progress_game(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].periods == "(1-1, 1-0)"
 
     def test_extracts_game_url_from_score_link(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].game_url == "https://stats.swehockey.se/Game/Events/1113947"
 
     def test_extracts_game_url_for_waiting_game(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[2].game_url == "https://stats.swehockey.se/Game/Events/1113768"
 
     def test_no_game_url_for_upcoming_without_link(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[1].game_url == ""
 
     def test_extracts_status_for_in_progress_game(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].status == "2nd period (15:30)"
 
     def test_extracts_game_clock_from_status(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].game_clock == "15:30"
         assert entries[1].game_clock == ""
         assert entries[2].game_clock == ""
 
     def test_extracts_current_period_from_status(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[0].current_period == "2nd period"
         assert entries[1].current_period == ""
         assert entries[2].current_period == "1st period"
 
     def test_extracts_status_for_waiting_game(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[2].status == "Waiting for 1st period"
 
     def test_status_empty_for_upcoming_game(self):
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         assert entries[1].status == ""
 
     def test_empty_page_returns_empty_list(self):
-        entries = parse_live_games_html(LIVE_PAGE_EMPTY_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_EMPTY_HTML)
         assert entries == []
 
     def test_deduplicates_mobile_and_desktop_views(self):
         """Games appear twice (mobile + desktop layout). Should only get one per matchup."""
-        entries = parse_live_games_html(LIVE_PAGE_HTML)
+        entries, _ = parse_live_games_html(LIVE_PAGE_HTML)
         # Check no duplicates
         keys = [(e.home_team, e.away_team) for e in entries]
         assert len(keys) == len(set(keys))
+
+    def test_extracts_page_last_update_timestamp(self):
+        _, page_last_update = parse_live_games_html(LIVE_PAGE_HTML)
+        assert page_last_update == "2026-08-07 17:45:48"
+
+    def test_returns_none_when_no_last_update(self):
+        _, page_last_update = parse_live_games_html(LIVE_PAGE_EMPTY_HTML)
+        assert page_last_update is None
 
 
 # ---------------------------------------------------------------------------
@@ -545,6 +556,32 @@ class TestStoreLiveGames:
         assert len(loaded) == 2
         assert loaded[0].home_team == "Team C"
 
+    def test_save_and_get_page_last_update(self, tmp_path):
+        store = Store(tmp_path)
+        games = [
+            ScheduleEntry(
+                date="2026-08-07", time="16:00", home_team="Rögle BK", away_team="IF Malmö Redhawks",
+                game_result="", periods="", spectators="", venue="Catena Arena", game_url="", round="", status="",
+            ),
+        ]
+        store.save_live_games(21139, games, page_last_update="2026-08-07 15:55:00")
+        assert store.get_live_games_page_last_update(21139) == "2026-08-07 15:55:00"
+
+    def test_page_last_update_none_when_not_provided(self, tmp_path):
+        store = Store(tmp_path)
+        games = [
+            ScheduleEntry(
+                date="2026-08-07", time="16:00", home_team="Rögle BK", away_team="IF Malmö Redhawks",
+                game_result="", periods="", spectators="", venue="Catena Arena", game_url="", round="", status="",
+            ),
+        ]
+        store.save_live_games(21139, games)
+        assert store.get_live_games_page_last_update(21139) is None
+
+    def test_page_last_update_none_when_not_saved(self, tmp_path):
+        store = Store(tmp_path)
+        assert store.get_live_games_page_last_update(99999) is None
+
 
 # ---------------------------------------------------------------------------
 # Schedule module tests (fetch_live_games / get_live_games)
@@ -559,11 +596,12 @@ class TestFetchLiveGames:
                 game_result="", periods="", spectators="", venue="Catena Arena", game_url="", round="", status="",
             ),
         ]
-        monkeypatch.setattr("src.shl.schedule.extract_live_games", lambda season_id: fake_games)
+        monkeypatch.setattr("src.shl.schedule.extract_live_games", lambda season_id: (fake_games, "2026-08-07 16:00:00"))
 
-        result = fetch_live_games(21139, tmp_path)
+        result, page_last_update = fetch_live_games(21139, tmp_path)
         assert len(result) == 1
         assert result[0].home_team == "Rögle BK"
+        assert page_last_update == "2026-08-07 16:00:00"
 
         # Verify it was persisted
         cached = get_live_games(21139, tmp_path)
@@ -605,6 +643,7 @@ class TestLiveGamesEndpoint:
         ]
         monkeypatch.setattr("src.shl.rest_api.get_live_games", lambda season_id, cache_dir: games)
         monkeypatch.setattr("src.shl.rest_api.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T10:00:00")
+        monkeypatch.setattr("src.shl.rest_api.get_live_games_page_last_update", lambda cache_dir, season_id: "2026-08-07 09:55:00")
 
         client = TestClient(create_app(tmp_path))
         response = client.get("/seasons/21139/games/live")
@@ -613,6 +652,7 @@ class TestLiveGamesEndpoint:
         assert payload["meta"]["count"] == 1
         assert payload["data"][0]["home_team"] == "Rögle BK"
         assert payload["meta"]["source_fetched_at"] == "2026-08-07T10:00:00"
+        assert payload["meta"]["page_last_update"] == "2026-08-07 09:55:00"
 
     def test_fetches_on_demand_when_not_cached(self, monkeypatch, tmp_path):
         games = [
@@ -622,8 +662,9 @@ class TestLiveGamesEndpoint:
             ),
         ]
         monkeypatch.setattr("src.shl.rest_api.get_live_games", lambda season_id, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_live_games", lambda season_id, cache_dir: games)
+        monkeypatch.setattr("src.shl.rest_api.fetch_live_games", lambda season_id, cache_dir: (games, "2026-08-07 11:00:00"))
         monkeypatch.setattr("src.shl.rest_api.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T11:00:00")
+        monkeypatch.setattr("src.shl.rest_api.get_live_games_page_last_update", lambda cache_dir, season_id: "2026-08-07 11:00:00")
 
         client = TestClient(create_app(tmp_path))
         response = client.get("/seasons/21139/games/live")
@@ -634,7 +675,11 @@ class TestLiveGamesEndpoint:
 
     def test_returns_502_when_fetch_fails(self, monkeypatch, tmp_path):
         monkeypatch.setattr("src.shl.rest_api.get_live_games", lambda season_id, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_live_games", lambda season_id, cache_dir: (_ for _ in ()).throw(RuntimeError("upstream down")))
+
+        def raise_error(season_id, cache_dir):
+            raise RuntimeError("upstream down")
+
+        monkeypatch.setattr("src.shl.rest_api.fetch_live_games", raise_error)
 
         client = TestClient(create_app(tmp_path))
         response = client.get("/seasons/21139/games/live")
@@ -644,6 +689,7 @@ class TestLiveGamesEndpoint:
     def test_returns_empty_list_when_no_games_today(self, monkeypatch, tmp_path):
         monkeypatch.setattr("src.shl.rest_api.get_live_games", lambda season_id, cache_dir: [])
         monkeypatch.setattr("src.shl.rest_api.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T10:00:00")
+        monkeypatch.setattr("src.shl.rest_api.get_live_games_page_last_update", lambda cache_dir, season_id: None)
 
         client = TestClient(create_app(tmp_path))
         response = client.get("/seasons/21139/games/live")
@@ -651,6 +697,7 @@ class TestLiveGamesEndpoint:
         payload = response.json()
         assert payload["data"] == []
         assert payload["meta"]["count"] == 0
+        assert payload["meta"]["page_last_update"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -696,7 +743,7 @@ class TestPollerLiveGamesTarget:
             calls["fetch_live_games"] += 1
             assert season_id == 18263
             assert db_dir == tmp_path
-            return []
+            return [], None
 
         monkeypatch.setattr("src.shl.poller.fetch_live_games", fake_fetch_live_games)
 

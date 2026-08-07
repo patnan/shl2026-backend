@@ -88,7 +88,7 @@ def _build_state_notification(payload: Dict[str, Any]) -> Dict[str, str] | None:
     current_state = payload.get("current_state", "")
     score = payload.get("score", "?-?")
 
-    if current_state == "Final Score":
+    if current_state == "Final Score" or current_state == "Game Finished":
         return {
             "title": "🏁 Slutsignal",
             "body": f"Slutresultat: {score}",
