@@ -134,7 +134,7 @@ paths:
         listed as upcoming or in-progress for today. Unlike /games/today (which
         filters the stored schedule by date), this fetches the dedicated Live page
         that shows real-time game status during game days. Data is refreshed every
-        30 seconds by the poller and fetched on demand if not yet cached.
+        45 seconds by the poller and fetched on demand if not yet cached.
         The response meta includes `page_last_update` with the timestamp from the
         SweHockey page header indicating when their data was last refreshed.
       parameters:

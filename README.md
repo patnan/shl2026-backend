@@ -23,7 +23,7 @@ Code root: [src](src)
 - Scrape team abbreviations dynamically from SweHockey roster page navigation.
 - Enrich player data with portraits and shl.se UUIDs via shl.se API.
 - Compare two game snapshots and detect scoring changes.
-- Scrape today's live/upcoming games from SweHockey Live page (polled every 30s).
+- Scrape today's live/upcoming games from SweHockey Live page (polled every 45s, respects cache headers).
 - Extract "Last update" timestamp from SweHockey pages (schedule and live) for data freshness tracking.
 - Push notifications for live score changes via FCM.
 - CLI support for scraping, overview validation preview, snapshot comparison, poller seeding/worker runs, and REST API serving.

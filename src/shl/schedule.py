@@ -424,7 +424,7 @@ def calculate_standings_from_schedule(entries: List[ScheduleEntry]) -> List[Stan
     ]
 
 
-def fetch_live_games(season_id: int, db_dir: Path) -> Tuple[List[ScheduleEntry], Optional[str]]:
+def fetch_live_games(season_id: int, db_dir: Path) -> Tuple[List[ScheduleEntry], Optional[str], Optional[int]]:
     """Fetch today's live/upcoming games from the SweHockey Live page.
 
     Scrapes the Live page for the season and persists the result to the database.
@@ -437,15 +437,15 @@ def fetch_live_games(season_id: int, db_dir: Path) -> Tuple[List[ScheduleEntry],
 
     Returns:
         Tuple of (List of ScheduleEntry dataclasses for today's games,
-        page_last_update timestamp or None).
+        page_last_update timestamp or None, age_seconds from HTTP Age header or None).
 
     Raises:
         FetchLiveGamesError: If scraping or saving fails.
     """
     try:
-        games, page_last_update = extract_live_games(season_id)
+        games, page_last_update, age_seconds = extract_live_games(season_id)
         save_live_games(db_dir, season_id, games, page_last_update)
-        return games, page_last_update
+        return games, page_last_update, age_seconds
     except Exception as exc:
         raise FetchLiveGamesError(f"fetch_live_games failed for season '{season_id}': {exc}") from exc
 

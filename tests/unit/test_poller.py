@@ -351,7 +351,7 @@ def test_live_games_poller_emits_game_state_changed_on_finish(monkeypatch, tmp_p
         next_poll_at=_iso(now - timedelta(seconds=1)),
     )
 
-    # Pre-populate with an in-progress game.
+    # Pre-populate with an in-progress game (with a page_last_update that will differ from fetch).
     prev_games = [
         ScheduleEntry(
             date="2026-08-07", time="16:00", home_team="Rögle BK", away_team="IF Malmö Redhawks",
@@ -360,7 +360,7 @@ def test_live_games_poller_emits_game_state_changed_on_finish(monkeypatch, tmp_p
             status="3rd period (05:00)", game_clock="05:00", current_period="3rd period",
         ),
     ]
-    save_live_games(tmp_path, 21139, prev_games)
+    save_live_games(tmp_path, 21139, prev_games, page_last_update="2026-08-07 17:50:00")
 
     # After fetch, the game is finished.
     new_games = [
@@ -374,7 +374,7 @@ def test_live_games_poller_emits_game_state_changed_on_finish(monkeypatch, tmp_p
 
     def fake_fetch_live_games(season_id, cache_dir):
         save_live_games(cache_dir, season_id, new_games)
-        return new_games, "2026-08-07 18:00:00"
+        return new_games, "2026-08-07 18:00:00", 5  # Added age_seconds
 
     monkeypatch.setattr("src.shl.poller.fetch_live_games", fake_fetch_live_games)
     monkeypatch.setattr("src.shl.poller.get_live_standings", lambda season_id, cache_dir: [])
@@ -418,7 +418,7 @@ def test_live_games_poller_no_event_when_already_finished(monkeypatch, tmp_path)
         game_url="https://stats.swehockey.se/Game/Events/1113947", round="",
         status="Game Finished", game_clock="", current_period="",
     )
-    save_live_games(tmp_path, 21139, [finished_game])
+    save_live_games(tmp_path, 21139, [finished_game], page_last_update="2026-08-07 18:50:00")
 
     def fake_fetch_live_games(season_id, cache_dir):
         # Status changes from "Game Finished" to "Final Score" (moves to final section)
@@ -429,7 +429,7 @@ def test_live_games_poller_no_event_when_already_finished(monkeypatch, tmp_path)
             status="Final Score", game_clock="", current_period="",
         )
         save_live_games(cache_dir, season_id, [final_game])
-        return [final_game], "2026-08-07 19:00:00"
+        return [final_game], "2026-08-07 19:00:00", 5  # Added age_seconds
 
     monkeypatch.setattr("src.shl.poller.fetch_live_games", fake_fetch_live_games)
     monkeypatch.setattr("src.shl.poller.get_live_standings", lambda season_id, cache_dir: [])
@@ -441,4 +441,68 @@ def test_live_games_poller_no_event_when_already_finished(monkeypatch, tmp_path)
     events = list_unprocessed_domain_events(tmp_path)
     state_events = [e for e in events if e.event_type == "game_state_changed"]
     # "Game Finished" -> "Final Score" should NOT emit again (both are finished)
+    assert len(state_events) == 0
+
+
+def test_live_games_interval_slows_when_all_finished(tmp_path):
+    from src.shl.poller import _compute_live_games_interval, LIVE_GAMES_INTERVAL_ALL_FINISHED
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_schedule, save_live_games
+
+    entries = [
+        ScheduleEntry(date="2026-08-07", time="16:00", home_team="A", away_team="B",
+                      game_result="3-1", periods="(1-0, 1-1, 1-0)", spectators="", venue="", game_url="", round=""),
+    ]
+    save_schedule(tmp_path, 21139, entries)
+
+    live = [
+        ScheduleEntry(date="2026-08-07", time="16:00", home_team="A", away_team="B",
+                      game_result="3 - 1", periods="(1-0, 1-1, 1-0)", spectators="", venue="",
+                      game_url="https://stats.swehockey.se/Game/Events/123", round="",
+                      status="Game Finished"),
+    ]
+    save_live_games(tmp_path, 21139, live)
+
+    now = datetime(2026, 8, 7, 19, 0, 0, tzinfo=timezone.utc)
+    assert _compute_live_games_interval(tmp_path, 21139, now) == LIVE_GAMES_INTERVAL_ALL_FINISHED
+
+
+def test_live_games_poller_skips_diffing_when_page_unchanged(monkeypatch, tmp_path):
+    from src.shl.models import ScheduleEntry
+    from src.shl.store import save_live_games
+
+    now = datetime(2026, 8, 7, 18, 0, 0, tzinfo=timezone.utc)
+
+    upsert_poll_target(
+        tmp_path,
+        target_type="live_games",
+        target_key="21139",
+        enabled=True,
+        next_poll_at=_iso(now - timedelta(seconds=1)),
+    )
+
+    game = ScheduleEntry(
+        date="2026-08-07", time="16:00", home_team="Team A", away_team="Team B",
+        game_result="1 - 0", periods="(1-0)", spectators="", venue="",
+        game_url="https://stats.swehockey.se/Game/Events/100", round="",
+        status="1st period (10:00)", game_clock="10:00", current_period="1st period",
+    )
+    # Pre-populate with page_last_update
+    save_live_games(tmp_path, 21139, [game], page_last_update="2026-08-07 17:00:00")
+
+    def fake_fetch_live_games(season_id, cache_dir):
+        # Returns same page_last_update — no change
+        save_live_games(cache_dir, season_id, [game], page_last_update="2026-08-07 17:00:00")
+        return [game], "2026-08-07 17:00:00", 35
+
+    monkeypatch.setattr("src.shl.poller.fetch_live_games", fake_fetch_live_games)
+    monkeypatch.setattr("src.shl.poller.get_live_standings", lambda sid, cd: [])
+    monkeypatch.setattr("src.shl.poller.compare_live_standings", lambda p, c: [])
+
+    results = run_poller_tick(tmp_path, now=now)
+    assert results[0]["status"] == "ok"
+
+    # No game_state_changed events should be emitted
+    events = list_unprocessed_domain_events(tmp_path)
+    state_events = [e for e in events if e.event_type == "game_state_changed"]
     assert len(state_events) == 0

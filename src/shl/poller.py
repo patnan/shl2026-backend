@@ -17,6 +17,7 @@ from src.shl.stats import fetch_goalie_stats, fetch_player_stats, fetch_rosters,
 from src.shl.models import PollTarget
 from src.shl.store import (
     insert_domain_event,
+    get_live_games_page_last_update,
     list_due_poll_targets,
     load_live_games,
     load_schedule,
@@ -38,7 +39,7 @@ DEFAULT_SUCCESS_INTERVAL_SECONDS = {
     "game": 30,
     "schedule": 60,  # Default fallback, overridden dynamically.
     "standings": 5 * 60,
-    "live_games": 30,              # Every 30 seconds.
+    "live_games": 45,              # Every 45 seconds (SweHockey caches for 40s).
     "player_stats": 2 * 60 * 60,  # Every 2 hours.
     "goalie_stats": 2 * 60 * 60,  # Every 2 hours.
     "rosters": 24 * 60 * 60,       # Every 24 hours.
@@ -77,11 +78,24 @@ def _to_iso(value: datetime) -> str:
     return value.isoformat(timespec="seconds")
 
 
+_last_live_age: Dict[str, Optional[int]] = {}  # target_key -> last Age header value
+
+
 def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optional[Path] = None, target_key: Optional[str] = None) -> str:
     if target_type == "schedule" and cache_dir is not None and target_key is not None:
         interval = _compute_schedule_interval(cache_dir, int(target_key), now)
     elif target_type == "live_games" and cache_dir is not None and target_key is not None:
         interval = _compute_live_games_interval(cache_dir, int(target_key), now)
+        # If the response was already aged, we can poll sooner since SweHockey
+        # will have fresh data sooner (max_age=40 - age = remaining TTL).
+        age = _last_live_age.get(target_key)
+        if age is not None and interval == LIVE_GAMES_INTERVAL_ACTIVE:
+            # Remaining cache TTL on SweHockey's side = max_age - age.
+            # We want to poll right after it expires.
+            SWEHOCKEY_MAX_AGE = 40
+            remaining_ttl = max(0, SWEHOCKEY_MAX_AGE - age)
+            # Poll after the remaining TTL + a small buffer.
+            interval = max(remaining_ttl + 3, 20)  # At least 20s, at most ~43s.
     else:
         interval = DEFAULT_SUCCESS_INTERVAL_SECONDS.get(target_type, 60)
     return _to_iso(now + timedelta(seconds=interval))
@@ -105,16 +119,18 @@ def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -
     return int((next_time - now).total_seconds())
 
 # Live games polling intervals.
-LIVE_GAMES_INTERVAL_ACTIVE = 30             # Within game window: every 30 seconds.
+LIVE_GAMES_INTERVAL_ACTIVE = 45             # Within game window: every 45s (SweHockey caches for 40s).
+LIVE_GAMES_INTERVAL_ALL_FINISHED = 10 * 60  # All games finished: check every 10 minutes.
 LIVE_GAMES_INTERVAL_IDLE = 120 * 60          # Outside game window: every 120 minutes.
 
 
 def _compute_live_games_interval(cache_dir: Path, season_id: int, now: datetime) -> int:
     """Determine live games polling interval based on today's game times.
 
-    - No games today: every 15 minutes.
-    - Within active window (15 min before first game to 3h after last game starts): every 30 seconds.
-    - Outside active window: every 15 minutes.
+    - No games today: every 120 minutes.
+    - All games finished: every 10 minutes.
+    - Within active window (15 min before first game to 3h after last game starts): every 45 seconds.
+    - Outside active window: every 120 minutes.
     """
     schedule = load_schedule(cache_dir, season_id)
     if not schedule:
@@ -125,6 +141,19 @@ def _compute_live_games_interval(cache_dir: Path, season_id: int, now: datetime)
 
     if not todays_games:
         return LIVE_GAMES_INTERVAL_IDLE
+
+    # Check if all today's games with results are finished (from live_games cache).
+    live_games = load_live_games(cache_dir, season_id)
+    if live_games:
+        games_with_results = [g for g in live_games if g.game_result]
+        if games_with_results and all(
+            g.status.lower() in ("game finished", "final score")
+            for g in games_with_results
+        ):
+            # All started games are finished. Check if any are still upcoming.
+            upcoming = [g for g in live_games if not g.game_result and g.game_state == "not_started"]
+            if not upcoming:
+                return LIVE_GAMES_INTERVAL_ALL_FINISHED
 
     start_times: List[datetime] = []
     for entry in todays_games:
@@ -375,11 +404,25 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
 
     if target_type == "live_games":
         season_id = int(target_key)
+        # Check previous page_last_update for early-exit optimization.
+        prev_page_last_update = get_live_games_page_last_update(cache_dir, season_id)
         # Snapshot previous live games and standings before fetching new data.
         prev_live_games = load_live_games(cache_dir, season_id) or []
         prev_live_standings = get_live_standings(season_id, cache_dir)
 
-        fetch_live_games(season_id, cache_dir)
+        games, page_last_update, age_seconds = fetch_live_games(season_id, cache_dir)
+
+        # Store Age header for interval adjustment in _compute_success_next_poll.
+        _last_live_age[target_key] = age_seconds
+
+        # Early-exit: if page_last_update hasn't changed, SweHockey has no new data.
+        if prev_page_last_update and page_last_update == prev_page_last_update:
+            logger.debug(
+                "live_games_unchanged season=%d page_last_update=%s",
+                season_id, page_last_update,
+            )
+            return
+
         new_live_games = load_live_games(cache_dir, season_id) or []
 
         # Detect game state changes (game ended).
@@ -395,7 +438,7 @@ def _run_target(cache_dir: Path, target_type: str, target_key: str) -> None:
             if entry.status.lower() in _FINISHED_STATUSES:
                 prev_status = prev_statuses.get(entry.game_url, "")
                 if prev_status.lower() not in _FINISHED_STATUSES:
-                    game_id_match = re.search(r"/(\d+)$", entry.game_url)
+                    game_id_match = re.search(r"/([0-9]+)$", entry.game_url)
                     game_id = int(game_id_match.group(1)) if game_id_match else 0
                     insert_domain_event(
                         cache_dir,

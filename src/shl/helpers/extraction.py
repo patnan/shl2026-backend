@@ -101,6 +101,35 @@ def fetch_html(url: str, timeout: int = 20) -> str:
 
 
 
+def fetch_html_with_headers(url: str, timeout: int = 20) -> Tuple[str, Dict[str, str]]:
+    """Fetch HTML and return (html_text, response_headers dict)."""
+    try:
+        for attempt in range(1, 4):
+            try:
+                response = requests.get(url, timeout=timeout)
+                response.raise_for_status()
+                response.encoding = "utf-8"
+                return response.text, dict(response.headers)
+            except requests.exceptions.HTTPError as exc:
+                status_code = exc.response.status_code if exc.response is not None else None
+                if status_code in {429} or (status_code is not None and status_code >= 500):
+                    if attempt < 3:
+                        time.sleep(0.4 * attempt)
+                        continue
+                raise
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+                if attempt < 3:
+                    time.sleep(0.4 * attempt)
+                    continue
+                raise
+        raise RuntimeError(f"All fetch attempts failed for URL: {url}")
+    except FetchHtmlError:
+        raise
+    except Exception as exc:
+        raise FetchHtmlError(f"fetch_html_with_headers failed for '{url}': {exc}") from exc
+
+
+
 def extract_game_urls_from_listing_html(html: str, base_url: str) -> List[str]:
     try:
         soup = BeautifulSoup(html, "html.parser")
@@ -619,23 +648,28 @@ def parse_live_games_html(html: str) -> Tuple[List[ScheduleEntry], Optional[str]
     return entries, page_last_update
 
 
-def extract_live_games(season_id: int) -> Tuple[List[ScheduleEntry], Optional[str]]:
+def extract_live_games(season_id: int) -> Tuple[List[ScheduleEntry], Optional[str], Optional[int]]:
     """Fetch and parse the SweHockey Live page for a season.
 
-    Args:
-        season_id: SweHockey season/tournament ID.
-
     Returns:
-        Tuple of (List of ScheduleEntry dataclasses for today's live/upcoming games,
-        page_last_update timestamp or None).
+        Tuple of (games, page_last_update, age_seconds).
+        age_seconds is from the HTTP Age header (how old the cached response is).
 
     Raises:
         ExtractLiveGamesError: If fetching or parsing fails.
     """
     try:
         url = f"https://stats.swehockey.se/ScheduleAndResults/Live/{season_id}"
-        html = fetch_html(url)
-        return parse_live_games_html(html)
+        html, headers = fetch_html_with_headers(url)
+        games, page_last_update = parse_live_games_html(html)
+        age_seconds: Optional[int] = None
+        age_header = headers.get("Age")
+        if age_header:
+            try:
+                age_seconds = int(age_header)
+            except (ValueError, TypeError):
+                pass
+        return games, page_last_update, age_seconds
     except ExtractLiveGamesError:
         raise
     except Exception as exc:

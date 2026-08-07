@@ -596,9 +596,9 @@ class TestFetchLiveGames:
                 game_result="", periods="", spectators="", venue="Catena Arena", game_url="", round="", status="",
             ),
         ]
-        monkeypatch.setattr("src.shl.schedule.extract_live_games", lambda season_id: (fake_games, "2026-08-07 16:00:00"))
+        monkeypatch.setattr("src.shl.schedule.extract_live_games", lambda season_id: (fake_games, "2026-08-07 16:00:00", None))
 
-        result, page_last_update = fetch_live_games(21139, tmp_path)
+        result, page_last_update, age_seconds = fetch_live_games(21139, tmp_path)
         assert len(result) == 1
         assert result[0].home_team == "Rögle BK"
         assert page_last_update == "2026-08-07 16:00:00"
@@ -662,7 +662,7 @@ class TestLiveGamesEndpoint:
             ),
         ]
         monkeypatch.setattr("src.shl.rest_api.get_live_games", lambda season_id, cache_dir: None)
-        monkeypatch.setattr("src.shl.rest_api.fetch_live_games", lambda season_id, cache_dir: (games, "2026-08-07 11:00:00"))
+        monkeypatch.setattr("src.shl.rest_api.fetch_live_games", lambda season_id, cache_dir: (games, "2026-08-07 11:00:00", None))
         monkeypatch.setattr("src.shl.rest_api.get_live_games_fetched_at", lambda cache_dir, season_id: "2026-08-07T11:00:00")
         monkeypatch.setattr("src.shl.rest_api.get_live_games_page_last_update", lambda cache_dir, season_id: "2026-08-07 11:00:00")
 
@@ -743,7 +743,7 @@ class TestPollerLiveGamesTarget:
             calls["fetch_live_games"] += 1
             assert season_id == 18263
             assert db_dir == tmp_path
-            return [], None
+            return [], None, None
 
         monkeypatch.setattr("src.shl.poller.fetch_live_games", fake_fetch_live_games)
 
@@ -778,7 +778,7 @@ class TestPollerLiveGamesTarget:
         assert len(results) == 1
         assert results[0]["status"] == "error"
 
-    def test_success_interval_is_30_seconds(self):
+    def test_success_interval_is_45_seconds(self):
         from src.shl.poller import DEFAULT_SUCCESS_INTERVAL_SECONDS
 
-        assert DEFAULT_SUCCESS_INTERVAL_SECONDS["live_games"] == 30
+        assert DEFAULT_SUCCESS_INTERVAL_SECONDS["live_games"] == 45
