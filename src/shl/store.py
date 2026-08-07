@@ -110,6 +110,11 @@ CREATE TABLE IF NOT EXISTS shl_se_players (
     fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (season_id, team, jersey)
 );
+CREATE TABLE IF NOT EXISTS live_games (
+    season_id INTEGER PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -409,6 +414,30 @@ class Store:
             (season_id, team, jersey),
         ).fetchone()
         return row[0] if row else None
+
+    # ------------------------------------------------------------------
+    # Live games
+    # ------------------------------------------------------------------
+
+    def load_live_games(self, season_id: int) -> Optional[List[ScheduleEntry]]:
+        row = self._get_conn().execute(
+            "SELECT data FROM live_games WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return [ScheduleEntry.from_dict(e) for e in json.loads(row[0])] if row else None
+
+    def get_live_games_fetched_at(self, season_id: int) -> Optional[str]:
+        row = self._get_conn().execute(
+            "SELECT fetched_at FROM live_games WHERE season_id = ?", (season_id,)
+        ).fetchone()
+        return row[0] if row else None
+
+    def save_live_games(self, season_id: int, games: List[ScheduleEntry]) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO live_games (season_id, data, fetched_at) VALUES (?, ?, ?)",
+            (season_id, json.dumps([dataclasses.asdict(e) for e in games], ensure_ascii=False), _utc_now_iso()),
+        )
+        conn.commit()
 
     # ------------------------------------------------------------------
     # Poll targets
@@ -832,6 +861,18 @@ def unregister_device(cache_dir: Path, fcm_token: str) -> bool:
 
 def list_device_tokens(cache_dir: Path) -> List[str]:
     return _store(cache_dir).list_device_tokens()
+
+
+def load_live_games(cache_dir: Path, season_id: int) -> Optional[List[ScheduleEntry]]:
+    return _store(cache_dir).load_live_games(season_id)
+
+
+def get_live_games_fetched_at(cache_dir: Path, season_id: int) -> Optional[str]:
+    return _store(cache_dir).get_live_games_fetched_at(season_id)
+
+
+def save_live_games(cache_dir: Path, season_id: int, games: List[ScheduleEntry]) -> None:
+    _store(cache_dir).save_live_games(season_id, games)
 
 
 def cache_db_path(cache_dir: Path) -> Path:

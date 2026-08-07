@@ -80,6 +80,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/ScheduleResponse"
 
+  /seasons/{season_id}/games/live:
+    get:
+      operationId: getLiveGames
+      summary: Today's games from the SweHockey Live page
+      description: |
+        Scraped from the SweHockey Live page for the season. Returns all games
+        listed as upcoming or in-progress for today. Unlike /games/today (which
+        filters the stored schedule by date), this fetches the dedicated Live page
+        that shows real-time game status during game days. Data is fetched on demand
+        if not yet cached.
+      parameters:
+        - $ref: "#/components/parameters/SeasonId"
+      responses:
+        "200":
+          description: Today's live/upcoming games
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleResponse"
+        "502":
+          description: Failed to fetch live games from upstream
+
   /seasons/{season_id}/games/played:
     get:
       operationId: getPlayedGames

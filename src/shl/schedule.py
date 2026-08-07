@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from src.shl.helpers.extraction import (
+    extract_live_games,
     extract_schedule_games,
 )
 from src.shl.models import ScheduleEntry, StandingsRow
-from src.shl.store import save_schedule, load_schedule, load_standings
+from src.shl.store import load_live_games, load_schedule, load_standings, save_live_games, save_schedule
 
 
 class FetchScheduleError(RuntimeError):
@@ -19,6 +20,10 @@ class GetGamesForDateError(RuntimeError):
 
 
 class GetAllPlayedGamesError(RuntimeError):
+    pass
+
+
+class FetchLiveGamesError(RuntimeError):
     pass
 
 
@@ -412,6 +417,36 @@ def calculate_standings_from_schedule(entries: List[ScheduleEntry]) -> List[Stan
         )
         for i, e in enumerate(sorted_standings, start=1)
     ]
+
+
+def fetch_live_games(season_id: int, db_dir: Path) -> List[ScheduleEntry]:
+    """Fetch today's live/upcoming games from the SweHockey Live page.
+
+    Scrapes the Live page for the season and persists the result to the database.
+    Unlike fetch_schedule, this always re-fetches (no cache check) because the
+    live page changes frequently during game days.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+        db_dir: Path to the cache/database directory.
+
+    Returns:
+        List of ScheduleEntry dataclasses for today's games.
+
+    Raises:
+        FetchLiveGamesError: If scraping or saving fails.
+    """
+    try:
+        games = extract_live_games(season_id)
+        save_live_games(db_dir, season_id, games)
+        return games
+    except Exception as exc:
+        raise FetchLiveGamesError(f"fetch_live_games failed for season '{season_id}': {exc}") from exc
+
+
+def get_live_games(season_id: int, db_dir: Path) -> Optional[List[ScheduleEntry]]:
+    """Load the cached live games for a season, or None if not yet fetched."""
+    return load_live_games(db_dir, season_id)
 
 
 fetchSchedule = fetch_schedule

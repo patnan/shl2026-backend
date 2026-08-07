@@ -18,14 +18,16 @@ from fastapi.staticfiles import StaticFiles
 from src.shl.schedule import (
     get_all_played_games,
     get_games_for_date,
+    get_live_games,
     get_next_round,
     get_played_rounds,
     get_rounds,
     get_schedule,
     get_standings,
     get_todays_games,
+    fetch_live_games,
 )
-from src.shl.store import get_games_freshness, get_schedule_fetched_at
+from src.shl.store import get_games_freshness, get_schedule_fetched_at, get_live_games_fetched_at
 from src.shl.store import get_game_fetched_at, load_game
 from src.shl.store import register_device, unregister_device
 from src.shl.stats import fetch_rosters, fetch_team_info, fetch_team_player_stats, get_goalie_stats, get_player_stats, get_rosters, get_team_info
@@ -239,6 +241,34 @@ def create_app(cache_dir: Path) -> FastAPI:
     def season_todays_games(season_id: int) -> Dict[str, Any]:
         games = get_todays_games(season_id, cache_dir)
         source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+        return {
+            "data": _serialize(games),
+            "meta": {
+                "season_id": str(season_id),
+                "count": len(games),
+                "source_fetched_at": source_fetched_at,
+                **_meta(),
+            },
+        }
+
+    @app.get("/seasons/{season_id}/games/live")
+    def season_live_games(season_id: int) -> Dict[str, Any]:
+        """Return today's live/upcoming games scraped from the SweHockey Live page.
+
+        Returns cached data if available. Use the poller or fetch_live_games to refresh.
+        """
+        games = get_live_games(season_id, cache_dir)
+        if games is None:
+            # Try fetching on demand if not yet cached.
+            try:
+                games = fetch_live_games(season_id, cache_dir)
+            except Exception:
+                logger.exception("Failed to fetch live games for season %s", season_id)
+                return JSONResponse(
+                    status_code=502,
+                    content={"error": "Failed to fetch live games from upstream."},
+                )
+        source_fetched_at = get_live_games_fetched_at(cache_dir, season_id)
         return {
             "data": _serialize(games),
             "meta": {

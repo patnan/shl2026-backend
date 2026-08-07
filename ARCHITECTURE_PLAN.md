@@ -99,9 +99,11 @@ Scraped from SweHockey stats pages. Low-frequency polling since this data change
 Methods:
 - [src/shl/stats.py](src/shl/stats.py) fetch_player_stats, fetch_goalie_stats, fetch_rosters, fetch_team_info
 
-### 6) Live Game Scores (TODO — new season)
+### 6) Live Game Scores (partially implemented)
 
-During game days, the AJAX fragment at `/StatPage/Live/{season_id}/` provides live scores and period info, refreshed every 20 seconds by SweHockey. Implementation deferred until the 2026-27 season starts (September 2026) when we can see the actual HTML structure during live games.
+The SweHockey Live page at `/ScheduleAndResults/Live/{season_id}` lists today's upcoming and in-progress games. A parser (`parse_live_games_html`) extracts home team, away team, start time, and venue from the responsive HTML. Data is stored in the `live_games` table and served via `GET /seasons/{season_id}/games/live`.
+
+Current implementation handles upcoming games (time + venue). When games are in progress, the same Result column will show the live score — the parser is designed to detect this and populate `game_result` accordingly. Further evolution (period info, game status, linking to game detail pages) will be added as the 2026-27 season progresses and we observe live HTML structure during actual games.
 
 ## DB Design
 

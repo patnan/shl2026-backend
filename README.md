@@ -22,6 +22,7 @@ Code root: [src](src)
 - Scrape team abbreviations dynamically from SweHockey roster page navigation.
 - Enrich player data with portraits and shl.se UUIDs via shl.se API.
 - Compare two game snapshots and detect scoring changes.
+- Scrape today's live/upcoming games from SweHockey Live page.
 - Push notifications for live score changes via FCM.
 - CLI support for scraping, overview validation preview, snapshot comparison, poller seeding/worker runs, and REST API serving.
 
@@ -176,6 +177,7 @@ python -m src.cli serve --host 127.0.0.1 --port 8000
 curl "http://127.0.0.1:8000/seasons/18263/standings"
 curl "http://127.0.0.1:8000/seasons/18263/games?date=2025-09-16"
 curl "http://127.0.0.1:8000/seasons/18263/games/today"
+curl "http://127.0.0.1:8000/seasons/18263/games/live"
 curl "http://127.0.0.1:8000/seasons/18263/rounds"
 curl "http://127.0.0.1:8000/seasons/18263/rounds/played"
 curl "http://127.0.0.1:8000/seasons/18263/rounds/next"

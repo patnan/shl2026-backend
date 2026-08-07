@@ -2,6 +2,7 @@ import dataclasses
 import json
 import re
 import time
+from datetime import date
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 from urllib.parse import urljoin
@@ -50,6 +51,10 @@ class ExtractScheduleGamesFromListingHtmlError(GameScrapeError):
 
 
 class ExtractScheduleGamesError(GameScrapeError):
+    pass
+
+
+class ExtractLiveGamesError(GameScrapeError):
     pass
 
 
@@ -418,4 +423,124 @@ def extract_games_from_listing_by_date(listing_url: str, game_date: str) -> List
     except Exception as exc:
         raise ExtractGamesFromListingByDateError(
             f"extract_games_from_listing_by_date failed for listing_url '{listing_url}' and game_date '{game_date}': {exc}"
+        ) from exc
+
+
+def parse_live_games_html(html: str) -> List[ScheduleEntry]:
+    """Parse the SweHockey Live page HTML to extract today's games.
+
+    The live page uses Bootstrap responsive divs. Each game appears twice:
+    once for mobile (d-flex d-sm-none) and once for desktop (d-none d-sm-flex).
+    We parse the mobile view (simpler structure) using TodaysGamesGame class.
+
+    Each game row has:
+    - col-5 text-right: home team name
+    - col-2 Result: time + venue
+    - col-5 text-left: away team name
+
+    When a game is in progress, the Result div may contain a score instead of
+    (or in addition to) the time.
+
+    Args:
+        html: Raw HTML string from the Live page.
+
+    Returns:
+        List of ScheduleEntry dataclasses for each game found.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    entries: List[ScheduleEntry] = []
+    seen: set = set()
+
+    today_str = date.today().isoformat()
+
+    # Find the mobile-view game divs (class contains TodaysGamesGame and
+    # they are inside d-flex d-sm-none containers).
+    # We look for all divs with class TodaysGamesGame that have col-5 children.
+    game_divs = soup.find_all("div", class_="TodaysGamesGame")
+
+    for game_div in game_divs:
+        # Only process divs that have the team name structure (col-5 + col-2 + col-5).
+        cols = game_div.find_all("div", recursive=False)
+        if len(cols) < 3:
+            continue
+
+        # Find home team (col-5 text-right)
+        home_col = game_div.find("div", class_=re.compile(r"col-5.*text-right"))
+        if not home_col:
+            continue
+        home_team = home_col.get_text(strip=True)
+        if not home_team:
+            continue
+
+        # Find away team (col-5 text-left)
+        away_col = game_div.find("div", class_=re.compile(r"col-5.*text-left"))
+        if not away_col:
+            continue
+        away_team = away_col.get_text(strip=True)
+        if not away_team:
+            continue
+
+        # Deduplication key (since game appears in both mobile and desktop views)
+        key = (home_team, away_team)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        # Find result/time column (col-2 with class Result)
+        result_col = game_div.find("div", class_=re.compile(r"Result"))
+        game_time = ""
+        venue = ""
+        game_result = ""
+
+        if result_col:
+            # The Result div contains sub-divs: first is time/score, second is venue.
+            sub_divs = result_col.find_all("div", recursive=False)
+            if len(sub_divs) >= 1:
+                first_text = sub_divs[0].get_text(strip=True)
+                # Check if it's a time (HH:MM) or a score (N - N)
+                if re.match(r"^\d{1,2}:\d{2}$", first_text):
+                    game_time = first_text
+                elif re.search(r"\d+\s*-\s*\d+", first_text):
+                    game_result = first_text
+            if len(sub_divs) >= 2:
+                venue = sub_divs[1].get_text(strip=True)
+
+        entries.append(ScheduleEntry(
+            date=today_str,
+            time=game_time,
+            home_team=home_team,
+            away_team=away_team,
+            game_result=game_result,
+            periods="",
+            spectators="",
+            venue=venue,
+            game_url="",
+            round="",
+            status="",
+        ))
+
+    return entries
+
+
+def extract_live_games(season_id: int) -> List[ScheduleEntry]:
+    """Fetch and parse the SweHockey Live page for a season.
+
+    Args:
+        season_id: SweHockey season/tournament ID.
+
+    Returns:
+        List of ScheduleEntry dataclasses for today's live/upcoming games.
+
+    Raises:
+        ExtractLiveGamesError: If fetching or parsing fails.
+    """
+    try:
+        url = f"https://stats.swehockey.se/ScheduleAndResults/Live/{season_id}"
+        html = fetch_html(url)
+        return parse_live_games_html(html)
+    except ExtractLiveGamesError:
+        raise
+    except Exception as exc:
+        raise ExtractLiveGamesError(
+            f"extract_live_games failed for season '{season_id}': {exc}"
         ) from exc

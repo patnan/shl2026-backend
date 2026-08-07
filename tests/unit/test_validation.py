@@ -117,8 +117,18 @@ def test_calculate_standings_from_schedule_matches_official_18263():
     # Load actual schedule and compute standings.
     from src.shl.store import load_schedule
     from pathlib import Path
+    import sqlite3
 
-    schedule = load_schedule(Path("cache"), 18263)
+    cache_path = Path("cache")
+    db_path = cache_path / "cache.db"
+    if not db_path.exists():
+        pytest.skip("Season 18263 not cached — run poller-seed 18263 + poller-run first")
+
+    try:
+        schedule = load_schedule(cache_path, 18263)
+    except sqlite3.OperationalError:
+        pytest.skip("cache/cache.db is not writable — skipping validation test")
+
     if schedule is None:
         pytest.skip("Season 18263 not cached — run poller-seed 18263 + poller-run first")
 
