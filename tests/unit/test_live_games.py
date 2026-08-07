@@ -778,7 +778,7 @@ class TestPollerLiveGamesTarget:
         assert len(results) == 1
         assert results[0]["status"] == "error"
 
-    def test_success_interval_is_45_seconds(self):
+    def test_success_interval_is_25_seconds(self):
         from src.shl.poller import DEFAULT_SUCCESS_INTERVAL_SECONDS
 
-        assert DEFAULT_SUCCESS_INTERVAL_SECONDS["live_games"] == 45
+        assert DEFAULT_SUCCESS_INTERVAL_SECONDS["live_games"] == 25

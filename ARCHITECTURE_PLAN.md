@@ -48,7 +48,7 @@ The schedule poller is the primary driver for all change detection. The schedule
 Targets: season schedule IDs.
 
 Dynamic cadence (adapts to game activity):
-- Live games today: every **45 seconds** (respects SweHockey max-age=40 cache)
+- Live games today: every **25 seconds** (uses StatPage partial, max-age=20)
 - Game day, games not yet started: every **5 minutes**
 - No games today: every **15 minutes**
 
@@ -74,7 +74,7 @@ Standings are **computed from schedule data** (not a separate poller). Recalcula
 
 **Pre-season:** When no games have been played yet, standings returns all teams from the schedule at rank 1, sorted alphabetically by team name. All stats are zero.
 
-Because SweHockey updates the schedule page with in-progress scores during live games, and the poller fetches every 45s during game windows, standings are **effectively live** — they reflect goals within ~45 seconds of being scored. No separate "live standings" endpoint is needed.
+Because SweHockey updates the schedule page with in-progress scores during live games, and the poller fetches every 25s during game windows, standings are **effectively live** — they reflect goals within ~25 seconds of being scored. No separate "live standings" endpoint is needed.
 
 ### 4) Overview Standings Poller (Legacy/Validation)
 
@@ -105,9 +105,9 @@ The SweHockey Live page at `/ScheduleAndResults/Live/{season_id}` lists today's 
 
 | Target type | Source URL | Cadence |
 |---|---|---|
-| `live_games` | `/ScheduleAndResults/Live/{season_id}` | Every 45 seconds (adaptive) |
+| `live_games` | `/StatPage/Live/{season_id}/` | Every 25 seconds (adaptive) |
 
-The poller keeps the live games cache fresh every 45 seconds during active game windows. Polling is adaptive: if the HTTP `Age` header indicates SweHockey's cache is nearly stale, the next poll is scheduled to arrive right after the cache refreshes. When all games are finished, the interval widens to 10 minutes. The poller also short-circuits processing if the page's "Last update" timestamp hasn't changed. If the cache is empty (first request before poller has run), the API endpoint fetches on demand and caches the result.
+The poller keeps the live games cache fresh every 25 seconds during active game windows using the lightweight StatPage partial endpoint (~10KB vs ~110KB for the full page). Polling is adaptive: if the HTTP `Age` header indicates SweHockey's cache is nearly stale, the next poll is scheduled to arrive right after the cache refreshes. When all games are finished, the interval widens to 10 minutes. The poller also short-circuits processing if the page's "Last update" timestamp hasn't changed. If the cache is empty (first request before poller has run), the API endpoint fetches on demand and caches the result.
 
 The live games parser extracts: home/away teams, score, period scores, game_url (from score link), venue, start time, game status (e.g. "2nd period"), game clock (e.g. "01:49"), and current period. It also extracts the "Last update" timestamp from the SweHockey page header, which indicates when their data was last refreshed. This is stored in the `page_last_update` column and exposed in the API meta. The game page parser also works during live games (no longer requires "Final Score" in the HTML).
 

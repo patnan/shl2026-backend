@@ -659,7 +659,7 @@ def extract_live_games(season_id: int) -> Tuple[List[ScheduleEntry], Optional[st
         ExtractLiveGamesError: If fetching or parsing fails.
     """
     try:
-        url = f"https://stats.swehockey.se/ScheduleAndResults/Live/{season_id}"
+        url = f"https://stats.swehockey.se/StatPage/Live/{season_id}/"
         html, headers = fetch_html_with_headers(url)
         games, page_last_update = parse_live_games_html(html)
         age_seconds: Optional[int] = None

@@ -39,7 +39,7 @@ DEFAULT_SUCCESS_INTERVAL_SECONDS = {
     "game": 30,
     "schedule": 60,  # Default fallback, overridden dynamically.
     "standings": 5 * 60,
-    "live_games": 45,              # Every 45 seconds (SweHockey caches for 40s).
+    "live_games": 25,              # Every 25 seconds (StatPage partial caches for 20s).
     "player_stats": 2 * 60 * 60,  # Every 2 hours.
     "goalie_stats": 2 * 60 * 60,  # Every 2 hours.
     "rosters": 24 * 60 * 60,       # Every 24 hours.
@@ -92,10 +92,10 @@ def _compute_success_next_poll(target_type: str, now: datetime, cache_dir: Optio
         if age is not None and interval == LIVE_GAMES_INTERVAL_ACTIVE:
             # Remaining cache TTL on SweHockey's side = max_age - age.
             # We want to poll right after it expires.
-            SWEHOCKEY_MAX_AGE = 40
+            SWEHOCKEY_MAX_AGE = 20
             remaining_ttl = max(0, SWEHOCKEY_MAX_AGE - age)
             # Poll after the remaining TTL + a small buffer.
-            interval = max(remaining_ttl + 3, 20)  # At least 20s, at most ~43s.
+            interval = max(remaining_ttl + 3, 10)  # At least 10s, at most ~23s.
     else:
         interval = DEFAULT_SUCCESS_INTERVAL_SECONDS.get(target_type, 60)
     return _to_iso(now + timedelta(seconds=interval))
@@ -119,7 +119,7 @@ def _compute_schedule_interval(cache_dir: Path, season_id: int, now: datetime) -
     return int((next_time - now).total_seconds())
 
 # Live games polling intervals.
-LIVE_GAMES_INTERVAL_ACTIVE = 45             # Within game window: every 45s (SweHockey caches for 40s).
+LIVE_GAMES_INTERVAL_ACTIVE = 25             # Within game window: every 25s (StatPage caches for 20s).
 LIVE_GAMES_INTERVAL_ALL_FINISHED = 10 * 60  # All games finished: check every 10 minutes.
 LIVE_GAMES_INTERVAL_IDLE = 120 * 60          # Outside game window: every 120 minutes.
 
