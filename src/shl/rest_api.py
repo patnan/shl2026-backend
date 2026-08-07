@@ -311,14 +311,31 @@ def create_app(cache_dir: Path) -> FastAPI:
         }
 
     @app.get("/seasons/{season_id}/games")
-    def season_games_by_date(season_id: int, date: date) -> Dict[str, Any]:
-        games = get_games_for_date(season_id, date.isoformat(), cache_dir)
+    def season_games(season_id: int, date: Optional[date] = None) -> Dict[str, Any]:
         source_fetched_at = get_schedule_fetched_at(cache_dir, season_id)
+        if date is not None:
+            games = get_games_for_date(season_id, date.isoformat(), cache_dir)
+            return {
+                "data": _serialize(games),
+                "meta": {
+                    "season_id": str(season_id),
+                    "date": date.isoformat(),
+                    "source_schedule_fetched_at": source_fetched_at,
+                    **_meta(),
+                },
+            }
+        # No date filter — return all games.
+        schedule = get_schedule(season_id, cache_dir)
+        if schedule is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Schedule not yet fetched for this season."},
+            )
         return {
-            "data": _serialize(games),
+            "data": _serialize(schedule),
             "meta": {
                 "season_id": str(season_id),
-                "date": date.isoformat(),
+                "count": len(schedule),
                 "source_schedule_fetched_at": source_fetched_at,
                 **_meta(),
             },

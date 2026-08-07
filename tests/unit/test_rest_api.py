@@ -89,6 +89,41 @@ def test_games_by_date_endpoint_uses_date_query(monkeypatch, tmp_path):
     assert payload["meta"]["source_schedule_fetched_at"] == "2026-08-01T10:00:00"
 
 
+def test_games_endpoint_returns_all_games_without_date(monkeypatch, tmp_path):
+    schedule = [
+        ScheduleEntry(
+            date="2025-09-16", time="19:00", home_team="Team A", away_team="Team B",
+            game_result="2-1", periods="", spectators="", venue="Arena",
+            game_url="", round="1",
+        ),
+        ScheduleEntry(
+            date="2025-09-17", time="18:00", home_team="Team C", away_team="Team D",
+            game_result="", periods="", spectators="", venue="Arena 2",
+            game_url="", round="2",
+        ),
+    ]
+    monkeypatch.setattr("src.shl.rest_api.get_schedule", lambda season_id, cache_dir: schedule)
+    monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: "2026-08-01T10:00:00")
+    client = TestClient(create_app(tmp_path))
+
+    response = client.get("/seasons/18263/games")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["data"]) == 2
+    assert payload["meta"]["count"] == 2
+    assert payload["meta"]["source_schedule_fetched_at"] == "2026-08-01T10:00:00"
+
+
+def test_games_endpoint_returns_404_when_not_fetched(monkeypatch, tmp_path):
+    monkeypatch.setattr("src.shl.rest_api.get_schedule", lambda season_id, cache_dir: None)
+    monkeypatch.setattr("src.shl.rest_api.get_schedule_fetched_at", lambda cache_dir, season_id: None)
+    client = TestClient(create_app(tmp_path))
+
+    response = client.get("/seasons/18263/games")
+    assert response.status_code == 404
+    assert "not yet fetched" in response.json()["error"]
+
+
 def test_played_games_endpoint_returns_list(monkeypatch, tmp_path):
     entries = [
         ScheduleEntry(

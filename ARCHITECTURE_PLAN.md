@@ -223,7 +223,7 @@ Endpoints:
 1. GET / (endpoint index with descriptions)
 2. GET /health
 3. GET /seasons/{season_id}/schedule
-4. GET /seasons/{season_id}/games?date=YYYY-MM-DD
+4. GET /seasons/{season_id}/games (all, or ?date=YYYY-MM-DD to filter)
 5. GET /seasons/{season_id}/games/played
 6. GET /seasons/{season_id}/games/today
 7. GET /seasons/{season_id}/standings
@@ -349,7 +349,7 @@ Phase 2 Step 1 completion notes:
 1. Added FastAPI app factory in [src/shl/rest_api.py](src/shl/rest_api.py) with endpoints:
 	- /health
 	- /seasons/{season_id}/schedule
-	- /seasons/{season_id}/games?date=YYYY-MM-DD
+	- /seasons/{season_id}/games (all, or ?date=YYYY-MM-DD)
 	- /seasons/{season_id}/games/played
 	- /seasons/{season_id}/standings
 2. Added CLI serve command in [src/cli.py](src/cli.py) to run API via uvicorn.

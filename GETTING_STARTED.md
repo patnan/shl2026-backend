@@ -178,7 +178,7 @@ On first seed, the poller creates 6 targets per season:
 |----------|-------------|
 | `GET /health` | Health check |
 | `GET /seasons/{id}/schedule` | Full season schedule |
-| `GET /seasons/{id}/games?date=YYYY-MM-DD` | Games by date |
+| `GET /seasons/{id}/games` | All games (or filter with `?date=YYYY-MM-DD`) |
 | `GET /seasons/{id}/games/today` | Today's upcoming games |
 | `GET /seasons/{id}/rounds` | Schedule grouped by round |
 | `GET /seasons/{id}/rounds/played` | Completed rounds |

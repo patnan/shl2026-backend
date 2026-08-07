@@ -175,7 +175,7 @@ Behavior:
 - Read all schedule rows for a season.
 - Filter by date.
 
-API endpoint: GET /seasons/{season_id}/games?date=YYYY-MM-DD
+API endpoint: GET /seasons/{season_id}/games (all, or ?date=YYYY-MM-DD to filter)
 
 ### Get all played games
 
@@ -363,7 +363,7 @@ All endpoints are implemented in [src/shl/rest_api.py](src/shl/rest_api.py).
 |--------|------|-------------|
 | GET | /health | Health check |
 | GET | /seasons/{season_id}/schedule | Full season schedule |
-| GET | /seasons/{season_id}/games?date=YYYY-MM-DD | Games for a specific date |
+| GET | /seasons/{season_id}/games | All games (optional `?date=YYYY-MM-DD` filter) |
 | GET | /seasons/{season_id}/games/played | All games with results |
 | GET | /seasons/{season_id}/games/today | Today's unfinished games |
 | GET | /seasons/{season_id}/standings | Computed standings |

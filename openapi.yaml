@@ -89,24 +89,27 @@ paths:
 
   /seasons/{season_id}/games:
     get:
-      operationId: getGamesByDate
-      summary: Games filtered by date
+      operationId: getGames
+      summary: All games, optionally filtered by date
       parameters:
         - $ref: "#/components/parameters/SeasonId"
         - name: date
           in: query
-          required: true
+          required: false
+          description: Filter games by date. If omitted, returns all games in the season.
           schema:
             type: string
             format: date
             example: "2025-09-13"
       responses:
         "200":
-          description: Games for the specified date
+          description: Games (all or filtered by date)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ScheduleResponse"
+        "404":
+          description: Schedule not yet fetched for this season
 
   /seasons/{season_id}/games/today:
     get:
