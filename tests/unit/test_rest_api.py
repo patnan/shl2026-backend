@@ -212,15 +212,15 @@ def test_games_by_date_requires_valid_date(tmp_path):
 
 
 def test_game_details_returns_404_when_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr("src.shl.rest_api.load_game", lambda cache_dir, game_id: None)
+    monkeypatch.setattr("src.shl.game.extract_game_by_id", lambda game_id: (_ for _ in ()).throw(RuntimeError("not found")))
     client = TestClient(create_app(tmp_path))
 
     response = client.get("/games/1004308")
     assert response.status_code == 404
-    assert "No game stored" in response.json()["detail"]
+    assert "Game not found" in response.json()["detail"]
 
 
-def test_game_details_returns_persisted_game(monkeypatch, tmp_path):
+def test_game_details_returns_fresh_game(monkeypatch, tmp_path):
     game = Game.from_dict(
         {
             "game": {
@@ -257,7 +257,7 @@ def test_game_details_returns_persisted_game(monkeypatch, tmp_path):
             "actions": [],
         }
     )
-    monkeypatch.setattr("src.shl.rest_api.load_game", lambda cache_dir, game_id: game)
+    monkeypatch.setattr("src.shl.game.extract_game_by_id", lambda game_id: game)
     monkeypatch.setattr("src.shl.rest_api.get_game_fetched_at", lambda cache_dir, game_id: "2026-08-01T10:10:00")
     client = TestClient(create_app(tmp_path))
 
@@ -268,3 +268,5 @@ def test_game_details_returns_persisted_game(monkeypatch, tmp_path):
     assert payload["data"]["score"]["current"] == "2 - 1"
     assert payload["meta"]["game_id"] == "1004308"
     assert payload["meta"]["source_fetched_at"] == "2026-08-01T10:10:00"
+
+
