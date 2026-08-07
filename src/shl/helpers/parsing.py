@@ -156,8 +156,11 @@ def parse_total_and_periods(total_text: str, period_text: str) -> Tuple[int, Lis
 def parse_score_block(score_cell_text: str) -> Score:
     try:
         final_match = re.search(r"(\d+\s*-\s*\d+)", score_cell_text)
-        period_match = re.search(r"\((\s*\d+\s*-\s*\d+(?:\s*,\s*\d+\s*-\s*\d+)+\s*)\)", score_cell_text)
+        period_match = re.search(r"\((\s*\d+\s*-\s*\d+(?:\s*,\s*\d+\s*-\s*\d+)*\s*)\)", score_cell_text)
         state_match = re.search(r"\b(Final Score)\b", score_cell_text, flags=re.IGNORECASE)
+        # Live games show period state instead of "Final Score", e.g. "2nd period 03:22"
+        if not state_match:
+            state_match = re.search(r"(\d+(?:st|nd|rd|th)\s+period(?:\s+\d{1,2}:\d{2})?)", score_cell_text, flags=re.IGNORECASE)
 
         if not final_match:
             raise ParseScoreBlockError(f"Could not parse final score from: {score_cell_text}")
@@ -173,7 +176,7 @@ def parse_score_block(score_cell_text: str) -> Score:
             away_score=int(away_score_text),
             periods=period_scores,
             current_period=len(period_scores) if period_scores else None,
-            state=state_match.group(1).title() if state_match else None,
+            state=state_match.group(1).strip() if state_match else None,
         )
     except ParseScoreBlockError:
         raise
@@ -200,7 +203,9 @@ def find_top_stats_table(soup: BeautifulSoup):
         candidates = []
         for table in soup.find_all("table"):
             text = clean_text(table.get_text(" ", strip=True))
-            if not all(key in text for key in ["Final Score", "Shots", "Saves", "PIM", "PP"]):
+            # Require Shots/Saves/PIM/PP but allow either "Final Score" or live state
+            # (e.g. "1st period", "2nd period", "3rd period").
+            if not all(key in text for key in ["Shots", "Saves", "PIM", "PP"]):
                 continue
 
             direct_rows = table.find_all("tr", recursive=False)
