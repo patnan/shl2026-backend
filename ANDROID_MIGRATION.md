@@ -4,11 +4,11 @@ Summary of changes needed to make `shl-se-android` consume `shl2026-backend` dir
 
 ---
 
-## Backend Changes
+## Backend Changes ✅ DONE
 
-### 1. Enricha `TeamInfo` med `logo_url`
+### 1. ~~Enricha `TeamInfo` med `logo_url`~~ ✅
 
-`/seasons/{season_id}/teams` ska returnera:
+`/seasons/{season_id}/teams` returnerar nu:
 
 ```json
 {
@@ -19,30 +19,31 @@ Summary of changes needed to make `shl-se-android` consume `shl2026-backend` dir
 }
 ```
 
-- Koden finns redan i `shl_se.py` (`ShlSeTeam.logo_url` via `TeamMapper`)
-- Ändring: enricha `TeamInfo`-modellen med `logo_url`, populera vid fetch
+- `TeamInfo`-modellen utökad med `logo_url: str`
+- Teams-routern enrichar med loggor från shl.se `TeamMapper` vid response
 
-### 2. Lägg till `team_abbr` i standings-raden
+### 2. ~~Lägg till `team_abbr` i standings-raden~~ ✅
 
-`/seasons/{season_id}/standings/live` ska inkludera abbreviation per team:
+`/seasons/{season_id}/standings/live` inkluderar nu abbreviation per team:
 
 ```json
 {"rank": 1, "team": "Skellefteå AIK", "team_abbr": "SKE", "games_played": 10, ...}
 ```
 
-- Backend har redan `TeamInfo`-tabellen (name→abbr)
-- Ändring: `get_standings()` / `get_live_standings()` slår upp abbr och berikar `StandingsRow`
+- `_enrich_standings_with_abbr()` i standings-routern slår upp via `TeamInfo`-tabellen
+- Gäller både `/standings` och `/standings/live`
 
-### 3. Lägg till `game_id` i `ScheduleEntry`
+### 3. ~~Lägg till `game_id` i `ScheduleEntry`~~ ✅
 
-Alla schedule/live/rounds-svar ska inkludera `game_id` som eget int-fält:
+Alla schedule/live/rounds-svar inkluderar nu `game_id` som eget int-fält:
 
 ```json
 {"game_id": 1004308, "date": "2025-09-13", "home_team": "Brynäs IF", ...}
 ```
 
-- Finns redan i `game_url` (`/Game/Events/1004308`)
-- Ändring: extrahera vid parsing eller som `@property` i modellen, inkludera i serialisering
+- `@property game_id` extraherar från `game_url`
+- Inkluderas i `to_dict()` → alla serialiserade svar
+- `_serialize()` uppdaterad att använda `to_dict()` när tillgänglig
 
 ---
 

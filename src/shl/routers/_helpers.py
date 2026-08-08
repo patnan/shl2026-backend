@@ -9,6 +9,8 @@ from typing import Any, Dict
 
 def _serialize(value: Any) -> Any:
     if dataclasses.is_dataclass(value):
+        if hasattr(value, "to_dict"):
+            return value.to_dict()
         return dataclasses.asdict(value)
     if isinstance(value, dict):
         return {k: _serialize(v) for k, v in value.items()}

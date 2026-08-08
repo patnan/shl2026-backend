@@ -528,6 +528,11 @@ components:
     ScheduleEntry:
       type: object
       properties:
+        game_id:
+          type: integer
+          nullable: true
+          description: "Numeric game ID extracted from game_url"
+          example: 1004308
         date:
           type: string
           format: date
@@ -585,6 +590,10 @@ components:
         team:
           type: string
           example: "Skellefteå AIK"
+        team_abbr:
+          type: string
+          description: Team abbreviation (e.g. SKE, FRÖ)
+          example: "SKE"
         games_played:
           type: integer
         w:
@@ -738,6 +747,10 @@ components:
           type: string
           description: Official team abbreviation
           example: "BIF"
+        logo_url:
+          type: string
+          description: Team logo URL from shl.se
+          example: "https://www.shl.se/team_logos/bif.png"
       required:
         - team
         - abbreviation

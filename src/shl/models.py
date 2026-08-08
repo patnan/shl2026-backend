@@ -337,10 +337,17 @@ class ScheduleEntry:
 
         return "not_started"
 
+    @property
+    def game_id(self) -> Optional[int]:
+        """Extract numeric game ID from game_url (e.g. /Game/Events/1004308 → 1004308)."""
+        m = re.search(r"/(\d+)$", self.game_url)
+        return int(m.group(1)) if m else None
+
     def to_dict(self) -> Dict:
         d = dataclasses.asdict(self)
         d["overtime"] = self.overtime
         d["game_state"] = self.game_state
+        d["game_id"] = self.game_id
         return d
 
 
@@ -502,10 +509,11 @@ class RosterEntry:
 class TeamInfo:
     team: str  # Full name e.g. "Brynäs IF"
     abbreviation: str  # e.g. "BIF"
+    logo_url: str = ""  # Team logo URL from shl.se
 
     @classmethod
     def from_dict(cls, d: Dict) -> TeamInfo:
-        return cls(team=d["team"], abbreviation=d["abbreviation"])
+        return cls(team=d["team"], abbreviation=d["abbreviation"], logo_url=d.get("logo_url", ""))
 
     def to_dict(self) -> Dict:
         return dataclasses.asdict(self)

@@ -110,7 +110,7 @@ class TestTeamInfoModel:
     def test_to_dict(self):
         t = TeamInfo(team="HV 71", abbreviation="HV71")
         d = t.to_dict()
-        assert d == {"team": "HV 71", "abbreviation": "HV71"}
+        assert d == {"team": "HV 71", "abbreviation": "HV71", "logo_url": ""}
 
     def test_frozen(self):
         t = TeamInfo(team="A", abbreviation="A")
